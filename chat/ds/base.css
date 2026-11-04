@@ -1,0 +1,147 @@
+/* Elffuss base: element defaults for pages built on the system from scratch (the elffuss.com home, new pages).
+   Existing apps import tokens.css and elffuss.css and keep their own base. Needs tokens.css and fonts/fonts.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  background: var(--ef-wall);
+  scrollbar-color: var(--ef-steel) transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--ef-wall);
+  color: var(--ef-ink);
+  font-family: var(--ef-font);
+  font-size: var(--ef-text-base);
+  font-weight: var(--ef-weight);
+  line-height: var(--ef-leading);
+  caret-color: var(--ef-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0 0 var(--ef-s3);
+  font-family: var(--ef-font);
+  font-weight: var(--ef-weight-heading);
+  font-stretch: var(--ef-stretch-display);
+  line-height: var(--ef-leading-tight);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--ef-text-3xl);
+  font-weight: var(--ef-weight-display);
+  line-height: 1.04;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-size: var(--ef-text-2xl);
+}
+
+h3 {
+  font-size: var(--ef-text-lg);
+}
+
+p {
+  margin: 0 0 var(--ef-s3);
+  text-wrap: pretty;
+}
+
+a {
+  color: var(--ef-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--ef-steel-strong);
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  text-decoration-color: var(--ef-ink);
+}
+
+::selection {
+  background: var(--ef-selection);
+  color: var(--ef-ink);
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--ef-focus);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--ef-font-mono);
+  font-size: 0.9em;
+}
+
+code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--ef-r1);
+  background: var(--ef-board);
+}
+
+pre {
+  overflow-x: auto;
+  padding: var(--ef-s4);
+  border: 1px solid var(--ef-steel);
+  border-radius: var(--ef-r3);
+  background: var(--ef-surface);
+}
+
+pre code {
+  padding: 0;
+  background: none;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+hr {
+  margin: var(--ef-s6) 0;
+  border: 0;
+  border-top: 1px solid var(--ef-steel);
+}
+
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

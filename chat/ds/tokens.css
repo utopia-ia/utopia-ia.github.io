@@ -1,0 +1,98 @@
+/* Elffuss design tokens. Direction A, «El taller»: a daylight workshop. White walls, a light pegboard, steel ink,
+   safety tape for what needs attention now, and one enamel colour per product, like the handle of a tool.
+   Light only, for everyone. Variables only: importing this file changes nothing until a rule uses them.
+
+   Contrast, measured (WCAG): on --ef-wall (#fff) ink 17.3:1, graphite 6.25:1, every product enamel 5.8:1 or more,
+   ok 6.4:1, warn 7.2:1, err 6.7:1; on --ef-board graphite 5.45:1. --ef-tape and --ef-steel-strong are fills and
+   rules, never text (ink on tape 11:1). */
+
+:root {
+  /* Ground and structure */
+  --ef-wall: #ffffff;           /* page */
+  --ef-surface: #f6f7f4;        /* sidebars, panes, quiet bands */
+  --ef-board: #eef0ec;          /* the pegboard: home board, subtle fills */
+  --ef-board-hole: #cbd0c8;     /* pegboard holes, decorative */
+  --ef-steel: #d7dbdf;          /* hairlines, borders */
+  --ef-steel-strong: #9aa1a9;   /* rails, rings, strong rules; never text */
+
+  /* Ink */
+  --ef-ink: #191b1e;            /* text, primary buttons, focus */
+  --ef-graphite: #5b6169;       /* secondary text */
+  --ef-on-ink: #ffffff;         /* text on ink */
+
+  /* Safety tape: what needs attention now, the current step, internal-only marks */
+  --ef-tape: #ffc629;
+  --ef-tape-soft: #fff1c2;
+
+  /* States */
+  --ef-ok: #1a6b3d;
+  --ef-ok-soft: #e4f1e8;
+  --ef-warn: #7f4c00;
+  --ef-warn-soft: #fff1c2;
+  --ef-err: #b01f42;
+  --ef-err-soft: #fbe8ec;
+
+  /* Product enamels (text-safe on white) */
+  --ef-claw: #1e6b52;
+  --ef-translator: #0f6e8c;
+  --ef-copiloto: #8a5a00;
+  --ef-code: #2b4acb;
+  --ef-braid: #6b3fa0;
+
+  /* Each product sets its own: :root { --ef-accent: var(--ef-claw) } */
+  --ef-accent: var(--ef-ink);
+
+  /* Browser surfaces */
+  --ef-selection: #ffe48a;
+  --ef-focus: var(--ef-ink);
+
+  /* Type */
+  --ef-font: "Archivo", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ef-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --ef-stretch-display: 108%;   /* headings: a little wide, like an engraved plate */
+  --ef-stretch-label: 125%;     /* stamps and plate labels */
+  --ef-text-xs: 0.8125rem;      /* 13 */
+  --ef-text-sm: 0.875rem;       /* 14 */
+  --ef-text-base: 1rem;         /* 16 */
+  --ef-text-md: 1.125rem;       /* 18 */
+  --ef-text-lg: 1.375rem;       /* 22 */
+  --ef-text-xl: 1.75rem;        /* 28 */
+  --ef-text-2xl: 2.25rem;       /* 36 */
+  --ef-text-3xl: clamp(2.25rem, 1.5rem + 2.6vw, 3.5rem); /* 36 to 56 */
+  --ef-leading: 1.55;
+  --ef-leading-tight: 1.12;
+  --ef-weight: 400;
+  --ef-weight-strong: 620;
+  --ef-weight-heading: 700;
+  --ef-weight-display: 780;
+
+  /* Space (4 px steps) */
+  --ef-s1: 4px;
+  --ef-s2: 8px;
+  --ef-s3: 12px;
+  --ef-s4: 16px;
+  --ef-s5: 24px;
+  --ef-s6: 32px;
+  --ef-s7: 48px;
+  --ef-s8: 64px;
+  --ef-hit: 44px;               /* minimum touch target */
+
+  /* Radius: small objects tighter, panels wider */
+  --ef-r1: 4px;                 /* stamps, tags, code */
+  --ef-r2: 6px;                 /* buttons, inputs, chips */
+  --ef-r3: 8px;                 /* plates, cards */
+  --ef-r4: 12px;                /* panels, the board, dialogs */
+  --ef-r-pill: 999px;
+
+  /* Depth: offset and soft blur, never a halo */
+  --ef-shadow-1: 0 1px 0 rgba(25, 27, 30, 0.06);
+  --ef-shadow-2: 0 14px 28px -20px rgba(25, 27, 30, 0.45);
+  --ef-shadow-lift: 0 26px 36px -16px rgba(25, 27, 30, 0.5), 0 2px 0 rgba(25, 27, 30, 0.04);
+
+  /* Motion: exponential ease-out from a visible state */
+  --ef-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ef-fast: 140ms;
+  --ef-slow: 320ms;
+
+  color-scheme: light;
+}

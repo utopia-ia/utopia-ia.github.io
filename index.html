@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Elffuss · Chat with an AI that runs in your browser</title>
+<link rel="canonical" href="https://elffuss.com/">
+<link rel="alternate" hreflang="en" href="https://elffuss.com/">
+<link rel="alternate" hreflang="es" href="https://elffuss.com/?lang=es">
+<link rel="alternate" hreflang="x-default" href="https://elffuss.com/">
+<script>
+/* Language before first paint: ?lang=, then the saved choice, then a browser language starting with "es", then English.
+   The Spanish URL (?lang=es) is its own canonical, so Spanish keeps an indexable address. */
+(function () {
+  var d = document.documentElement, l = null, q = null;
+  function ok(v) { return v === 'en' || v === 'es' ? v : null; }
+  try { q = l = ok(new URLSearchParams(location.search).get('lang')); } catch (e) {}
+  if (!l) { try { l = ok(localStorage.getItem('elffuss-lang')); } catch (e) {} }
+  if (!l) { l = (navigator.language || '').toLowerCase().indexOf('es') === 0 ? 'es' : 'en'; }
+  d.lang = l;
+  d.className += ' js';
+  if (l === 'es') document.title = 'Elffuss · Chatea con una IA que corre en tu navegador';
+  if (q === 'es') { var c = document.querySelector('link[rel="canonical"]'); if (c) c.href = 'https://elffuss.com/?lang=es'; }
+})();
+</script>
+<meta name="description" content="A chat answered by an AI model that runs inside your browser tab through WebGPU, on your own device: no account, no API key, and your messages stay on your device unless you ask it to search the web. Plus the Elffuss apps: Claw, Code, Translator, Copilot, the tools and Braid.">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="/chat/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Elffuss">
+<link rel="apple-touch-icon" href="/chat/img/icon-192.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Elffuss">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="es_ES">
+<meta property="og:title" content="Elffuss: a chat whose AI runs in your browser">
+<meta property="og:description" content="Ask anything. The answer is written by a model running in your browser tab, on your own device, with no account and no API key.">
+<meta property="og:url" content="https://elffuss.com/">
+<meta property="og:image" content="https://elffuss.com/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Elffuss mark and the line: AI that runs in your browser, on your own GPU.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Elffuss: a chat whose AI runs in your browser">
+<meta name="twitter:description" content="Ask anything. The answer is written by a model running in your browser tab, on your own device.">
+<meta name="twitter:image" content="https://elffuss.com/og.png">
+<meta name="twitter:image:alt" content="The Elffuss mark and the line: AI that runs in your browser, on your own GPU.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z' fill='%23c8a06a'/%3E%3Ccircle cx='20.5' cy='13.2' r='2.1' fill='%23191b1e'/%3E%3C/svg%3E">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Elffuss","url":"https://elffuss.com/","inLanguage":["en","es"],"description":"A chat answered by an AI model that runs inside your browser tab through WebGPU, plus the Elffuss apps."}</script>
+<link rel="preload" href="/chat/ds/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/chat/ds/fonts/fonts.css">
+<link rel="stylesheet" href="/chat/ds/tokens.css">
+<link rel="stylesheet" href="/chat/ds/base.css">
+<link rel="stylesheet" href="/chat/ds/elffuss-mark.css">
+<link rel="stylesheet" href="/chat/chat.css">
+<link rel="modulepreload" href="/chat/chat.js">
+</head>
+<body>
+<a class="skip" href="#composer-input"><span data-l="en">Skip to the message box</span><span data-l="es" lang="es">Saltar al cuadro de mensaje</span></a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-tag" viewBox="0 0 32 32"><path fill-rule="evenodd" d="M3 16 10.6 6.5H27.5A2 2 0 0 1 29.5 8.5V23.5A2 2 0 0 1 27.5 25.5H10.6ZM14.2 16a2.7 2.7 0 1 1-5.4 0 2.7 2.7 0 0 1 5.4 0Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chats" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+  <symbol id="i-apps" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v12M6 12l6 6 6-6M5 20h14"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-shrink" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8M17 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h4"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9h17"/><circle cx="6.5" cy="6.8" r=".4"/><circle cx="8.6" cy="6.8" r=".4"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M6 3.5h12a1 1 0 0 1 1 1v16l-7-4-7 4v-16a1 1 0 0 1 1-1Z"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <aside class="side" id="side" aria-label="Chats and apps" data-aria-en="Chats and apps" data-aria-es="Conversaciones y apps">
+    <div class="side-head">
+      <a class="elffuss-mark" href="/" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word" translate="no">Elffuss</span></a>
+      <button class="icon-btn only-narrow" type="button" data-close-side aria-label="Close" data-aria-en="Close" data-aria-es="Cerrar"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+
+    <button class="new-chat" type="button" data-new-chat><svg class="ic"><use href="#i-plus"/></svg><span data-l="en">New chat</span><span data-l="es" lang="es">Nueva conversación</span></button>
+
+    <section class="chats needs-js" aria-labelledby="chats-h">
+      <h2 class="side-h" id="chats-h"><span data-l="en">Chats</span><span data-l="es" lang="es">Conversaciones</span></h2>
+      <ul class="chat-list" id="chat-list"></ul>
+      <p class="side-note" id="chats-empty"><span data-l="en">None yet. Chats are kept in this browser only.</span><span data-l="es" lang="es">Aún no hay ninguna. Se guardan solo en este navegador.</span></p>
+    </section>
+
+    <section class="mine needs-js" id="mine" aria-labelledby="mine-h">
+      <h2 class="side-h" id="mine-h"><span data-l="en">Your apps</span><span data-l="es" lang="es">Tus apps</span></h2>
+      <ul class="mine-list" id="mine-list"></ul>
+      <p class="side-note" id="mine-note"></p>
+      <button class="mem-link" id="mem-link" type="button" aria-haspopup="dialog" hidden><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg><span id="mem-count"></span></button>
+    </section>
+
+    <nav class="apps" id="apps-nav" aria-labelledby="apps-h">
+      <h2 class="side-h" id="apps-h">Apps</h2>
+      <ul class="app-list">
+        <li><a class="app-link" style="--c: var(--ef-claw)" href="https://claw.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Claw</span><span class="app-line"><span data-l="en">Builds small apps from a chat</span><span data-l="es" lang="es">Construye pequeñas apps desde un chat</span></span></a></li>
+        <li><a class="app-link" style="--c: var(--ef-code)" href="https://code.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Code</span><span class="app-line"><span data-l="en">Edits your project with you</span><span data-l="es" lang="es">Edita tu proyecto contigo</span></span></a></li>
+        <li><a class="app-link" style="--c: var(--ef-translator)" href="https://translator.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Translator</span><span class="app-line"><span data-l="en">Translates a conversation aloud</span><span data-l="es" lang="es">Traduce una conversación en voz alta</span></span></a></li>
+        <li><a class="app-link" style="--c: var(--ef-copiloto)" href="https://copilot.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></span><span class="app-line"><span data-l="en">Turns a call into a customer record</span><span data-l="es" lang="es">Convierte una llamada en una ficha</span></span></a></li>
+        <li><a class="app-link" style="--c: var(--ef-graphite)" href="https://tools.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no"><span data-l="en">Tools</span><span data-l="es" lang="es">Herramientas</span></span><span class="app-line"><span data-l="en">Every Elffuss tool in one place</span><span data-l="es" lang="es">Todas las herramientas de Elffuss en un solo sitio</span></span></a></li>
+        <li><a class="app-link" style="--c: var(--ef-braid)" href="https://braid.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Braid</span><span class="app-line"><span data-l="en">Version control for many agents</span><span data-l="es" lang="es">Control de versiones para muchos agentes</span></span></a></li>
+      </ul>
+      <a class="all-apps" href="/apps/"><span data-l="en">All apps</span><span data-l="es" lang="es">Todas las apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    </nav>
+
+    <button class="all-apps install-entry" id="install-entry" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-down"/></svg><span data-l="en">Install Elffuss as an app</span><span data-l="es" lang="es">Instalar Elffuss como app</span></button>
+    <div class="side-foot">
+      <a href="/how-it-works/"><span data-l="en">How it works</span><span data-l="es" lang="es">Cómo funciona</span></a>
+      <div class="lang needs-js" role="group" aria-label="Language" data-aria-en="Language" data-aria-es="Idioma">
+        <button type="button" data-set-lang="en" lang="en" aria-label="English" aria-pressed="true">EN</button>
+        <button type="button" data-set-lang="es" lang="es" aria-label="Español" aria-pressed="false">ES</button>
+      </div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <main class="main is-empty" id="main">
+    <header class="topbar">
+      <button class="icon-btn only-narrow" type="button" data-open-side aria-label="Chats" data-aria-en="Chats" data-aria-es="Conversaciones" aria-controls="side" aria-expanded="false"><svg class="ic"><use href="#i-chats"/></svg></button>
+      <a class="elffuss-mark only-narrow" href="/" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word" translate="no">Elffuss</span></a>
+      <p class="model needs-js" id="model" hidden><span class="model-name" id="model-name" translate="no"></span><span class="model-state" id="model-state"></span></p>
+      <div class="top-actions">
+        <button class="icon-btn only-narrow" type="button" data-new-chat aria-label="New chat" data-aria-en="New chat" data-aria-es="Nueva conversación"><svg class="ic"><use href="#i-plus"/></svg></button>
+        <button class="apps-btn only-narrow" type="button" data-open-apps aria-haspopup="dialog"><svg class="ic"><use href="#i-apps"/></svg>Apps</button>
+      </div>
+    </header>
+
+    <div class="stage">
+      <div class="scroller" id="scroller">
+        <div class="column">
+          <div class="welcome" id="welcome">
+            <h1><span data-l="en">Ask anything.</span><span data-l="es" lang="es">Pregunta lo que quieras.</span></h1>
+            <p data-l="en">A model running in this browser writes the answer, on your own device. What you type does not leave it, except a web search you ask for.</p>
+            <p data-l="es" lang="es">Responde un modelo que corre en este navegador, en tu propio dispositivo. Lo que escribes no sale de él, salvo las búsquedas web que le pidas.</p>
+            <p class="welcome-can" data-l="en">Ask it for a small app and it builds it here, ready to use. Ask it to remember something and Claw remembers it too. Ask it to search the web and it answers with the links.</p>
+            <p class="welcome-can" data-l="es" lang="es">Pídele una app pequeña y la construye aquí, lista para usar. Pídele que recuerde algo y Claw también lo recordará. Pídele que busque en la web y te contesta con los enlaces.</p>
+            <a class="all-apps welcome-more" href="/apps/"><span data-l="en">Meet Elffuss and all its apps</span><span data-l="es" lang="es">Conoce Elffuss y todas sus apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+          </div>
+          <ol class="thread" id="thread" aria-label="Conversation" data-aria-en="Conversation" data-aria-es="Conversación"></ol>
+        </div>
+      </div>
+
+      <div class="dock needs-js" id="dock">
+        <form class="composer" id="composer" autocomplete="off">
+          <label class="ef-visually-hidden" for="composer-input"><span data-l="en">Message</span><span data-l="es" lang="es">Mensaje</span></label>
+          <textarea id="composer-input" data-mem-focus-out name="message" rows="1" enterkeyhint="send" placeholder="Message Elffuss…" data-ph-en="Message Elffuss…" data-ph-es="Escribe a Elffuss…"></textarea>
+          <button class="mem-btn" id="mem-btn" type="button" hidden aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg><svg class="ic mem-off-line" aria-hidden="true" viewBox="0 0 24 24"><path d="M4 4l16 16"/></svg></button>
+          <button class="send" id="send" type="submit" aria-label="Send" data-aria-en="Send" data-aria-es="Enviar"><svg class="ic"><use href="#i-send"/></svg></button>
+          <button class="send stop" id="stop" type="button" hidden aria-label="Stop" data-aria-en="Stop" data-aria-es="Parar"><svg class="ic"><use href="#i-stop"/></svg></button>
+        </form>
+        <div class="mem-toggle" id="mem-toggle"></div>
+        <p class="fine" id="fine"><span data-l="en">Runs on this device with the Elffuss engine. Chats are kept in this browser only.</span><span data-l="es" lang="es">Corre en este dispositivo con el motor de Elffuss. Las conversaciones se guardan solo en este navegador.</span></p>
+      </div>
+
+      <section class="nogpu" id="nogpu" hidden aria-labelledby="nogpu-h">
+        <h1 id="nogpu-h"><span data-l="en">This browser cannot run the chat</span><span data-l="es" lang="es">Este navegador no puede ejecutar el chat</span></h1>
+        <p data-l="en">The chat runs a language model on this device's graphics card through WebGPU, and this browser does not offer what it needs. A recent Chrome or Edge on a computer can run it.</p>
+        <p data-l="es" lang="es">El chat ejecuta un modelo de lenguaje en la tarjeta gráfica de este dispositivo a través de WebGPU, y este navegador no ofrece lo que necesita. Un Chrome o un Edge recientes en un ordenador sí pueden.</p>
+        <p class="nogpu-why" id="nogpu-why"></p>
+        <h2><span data-l="en">The apps still open here</span><span data-l="es" lang="es">Las apps se abren igual</span></h2>
+        <p data-l="en">Without WebGPU, Code runs only in a basic mode with no model, and Copilot works with rules only. The speech models of Translator and Copilot fall back to the processor.</p>
+        <p data-l="es" lang="es">Sin WebGPU, Code solo funciona en un modo básico sin modelo y el Copiloto, solo con reglas. Los modelos de voz de Translator y del Copiloto pasan al procesador.</p>
+        <div class="nogpu-apps" id="nogpu-apps"></div>
+      </section>
+
+      <noscript><p class="noscript">The chat needs JavaScript. <a href="/apps/">See all the Elffuss apps</a>.</p></noscript>
+    </div>
+  </main>
+
+  <section class="app-panel" id="app-panel" hidden aria-labelledby="app-panel-name">
+    <div class="grip" id="app-grip" role="separator" aria-orientation="vertical" tabindex="0" aria-label="Panel width" data-aria-en="Panel width" data-aria-es="Ancho del panel"></div>
+    <header class="panel-head">
+      <svg class="ic panel-ic" aria-hidden="true"><use href="#i-window"/></svg>
+      <div class="panel-title">
+        <h2 id="app-panel-name" translate="no"></h2>
+        <span class="panel-state" id="app-panel-state"></span>
+      </div>
+      <a class="icon-btn" id="app-open-claw" target="_blank" rel="noopener" hidden><svg class="ic" aria-hidden="true"><use href="#i-external"/></svg></a>
+      <button class="icon-btn" type="button" id="app-full" aria-pressed="false"><svg class="ic" aria-hidden="true"><use href="#i-expand"/></svg></button>
+      <button class="icon-btn" type="button" id="app-close"><svg class="ic" aria-hidden="true"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="panel-err" id="app-err" role="status" hidden><span id="app-err-text"></span><button class="mini-btn" type="button" id="app-fix"></button></div>
+    <iframe class="app-frame" id="app-frame" sandbox="allow-scripts allow-forms allow-modals" referrerpolicy="no-referrer" title=""></iframe>
+  </section>
+</div>
+
+<dialog class="sheet" id="apps-sheet" aria-labelledby="sheet-h">
+  <div class="sheet-head">
+    <h2 id="sheet-h">Apps</h2>
+    <button class="icon-btn" type="button" data-close-apps aria-label="Close" data-aria-en="Close" data-aria-es="Cerrar"><svg class="ic"><use href="#i-close"/></svg></button>
+  </div>
+  <div id="sheet-body"></div>
+</dialog>
+
+<dialog class="sheet mem-sheet" id="mem-sheet" aria-labelledby="mem-sheet-h">
+  <div class="sheet-head">
+    <h2 id="mem-sheet-h"><span data-l="en">Memory</span><span data-l="es" lang="es">Memoria</span></h2>
+    <button class="icon-btn" type="button" data-close-mem aria-label="Close" data-aria-en="Close" data-aria-es="Cerrar"><svg class="ic"><use href="#i-close"/></svg></button>
+  </div>
+  <div id="mem-sheet-body"></div>
+</dialog>
+
+<script type="module" src="/chat/chat.js"></script>
+</body>
+</html>

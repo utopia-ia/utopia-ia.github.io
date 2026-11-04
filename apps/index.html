@@ -1,0 +1,865 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All apps · Elffuss: AI that runs in your browser, on your own GPU</title>
+<link rel="canonical" href="https://elffuss.com/apps/">
+<link rel="alternate" hreflang="en" href="https://elffuss.com/apps/">
+<link rel="alternate" hreflang="es" href="https://elffuss.com/apps/?lang=es">
+<link rel="alternate" hreflang="x-default" href="https://elffuss.com/apps/">
+<script>
+/* Language before first paint: ?lang=, then the saved choice, then a browser language starting with "es", then English.
+   The Spanish URL (?lang=es) is its own canonical, so Spanish keeps an indexable address. */
+(function () {
+  var d = document.documentElement, l = null, q = null;
+  function ok(v) { return v === 'en' || v === 'es' ? v : null; }
+  try { q = l = ok(new URLSearchParams(location.search).get('lang')); } catch (e) {}
+  if (!l) { try { l = ok(localStorage.getItem('elffuss-lang')); } catch (e) {} }
+  if (!l) { l = (navigator.language || '').toLowerCase().indexOf('es') === 0 ? 'es' : 'en'; }
+  d.lang = l;
+  d.className += ' js';
+  if (l === 'es') document.title = 'Todas las apps · Elffuss: IA que corre en tu navegador, en tu propia GPU';
+  if (q === 'es') { var c = document.querySelector('link[rel="canonical"]'); if (c) c.href = 'https://elffuss.com/apps/?lang=es'; }
+})();
+</script>
+<meta name="description" content="Free web apps that run AI models inside your browser tab through WebGPU, with no account and no API key: Claw, Code, Translator and Copilot. Plus Braid and BraidHub for building with agents.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#303752">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Elffuss">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="es_ES">
+<meta property="og:title" content="Elffuss: AI that runs in your browser, on your own GPU">
+<meta property="og:description" content="Free web apps that run AI models inside your browser tab through WebGPU, with no account and no API key: Claw, Code, Translator and Copilot. Plus Braid and BraidHub for building with agents.">
+<meta property="og:url" content="https://elffuss.com/apps/">
+<meta property="og:image" content="https://elffuss.com/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Elffuss mark and the line: AI that runs in your browser, on your own GPU.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Elffuss: AI that runs in your browser, on your own GPU">
+<meta name="twitter:description" content="Free web apps that run AI models in your browser tab through WebGPU, with no account and no API key.">
+<meta name="twitter:image" content="https://elffuss.com/og.png">
+<meta name="twitter:image:alt" content="The Elffuss mark and the line: AI that runs in your browser, on your own GPU.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z' fill='%23c8a06a'/%3E%3Ccircle cx='20.5' cy='13.2' r='2.1' fill='%23090a11'/%3E%3C/svg%3E">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Elffuss","url":"https://elffuss.com/","inLanguage":["en","es"],"description":"Free web apps that run AI models inside your browser tab through WebGPU."}</script>
+<style>
+:root {
+  --bg: #303752; --bg2: #39415f; --bg3: #424b6c;
+  --line: #4b5578; --line-strong: #5d688f;
+  --fg: #f1eff7; --dim: #cdcae2; --muted: #b6bccb;
+  --gold: #c8a06a; --gold-2: #e6c294; --violet: #8272ff; --violet-text: #a99cff;
+  --on-gold: #140f08;
+  --serif: "Iowan Old Style", Georgia, "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 12px; --r-sm: 8px;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body {
+  margin: 0; color: var(--fg); font: 400 1rem/1.6 var(--sans);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(56rem 30rem at 88% -9rem, rgba(130,114,255,.16), rgba(130,114,255,0) 70%),
+    radial-gradient(46rem 26rem at 2% -7rem, rgba(200,160,106,.14), rgba(200,160,106,0) 70%);
+  background-repeat: no-repeat;
+}
+img, svg, video { display: block; max-width: 100%; }
+a { color: var(--gold-2); }
+p { margin: 0; text-wrap: pretty; }
+:focus-visible { outline: 3px solid var(--violet-text); outline-offset: 2px; border-radius: 4px; }
+
+/* Both languages are in the page; the one that does not match html[lang] is not shown. */
+html:not([lang="es"]) [data-l="es"], html[lang="es"] [data-l="en"] { display: none !important; }
+html:not(.js) .needs-js { display: none !important; }
+
+.skip { position: absolute; left: 16px; top: -200px; z-index: 20; padding: 10px 16px; border-radius: var(--r-sm); background: var(--fg); color: var(--bg); font-weight: 600; text-decoration: none; }
+.skip:focus { top: 12px; }
+
+.wrap { width: 100%; max-width: 1200px; margin-inline: auto; padding-inline: 16px; }
+@media (min-width: 1280px) { .wrap { padding-inline: 24px; } }
+
+/* Header */
+.site-head { border-bottom: 1px solid var(--line); background: rgba(48,55,82,.88); }
+.head-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-height: 56px; padding-block: 6px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--fg); text-decoration: none; font: 600 1.3rem/1 var(--serif); letter-spacing: .01em; }
+.brand svg { width: 28px; height: 28px; flex: none; }
+.lang { margin-left: auto; display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 999px; }
+.lang button { min-width: 44px; height: 34px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: var(--dim); font: 600 .75rem/1 var(--mono); letter-spacing: .08em; cursor: pointer; transition: background-color .15s, color .15s; }
+.lang button:hover { color: var(--fg); }
+.lang button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+/* Below 960px the section links sit on one row of their own, which scrolls sideways inside the header when it does not fit. */
+.primary { order: 3; width: calc(100% + 20px); margin-inline: -10px; }
+.primary ul { display: flex; flex-wrap: nowrap; gap: 0 2px; margin: 0; padding: 0 0 2px; list-style: none; overflow-x: auto; scrollbar-width: thin; }
+.primary a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 10px; border-radius: var(--r-sm); color: var(--dim); text-decoration: none; font-size: .9rem; white-space: nowrap; transition: background-color .15s, color .15s; }
+.primary a:focus-visible { outline-offset: -3px; }
+.primary a:hover { color: var(--fg); background: var(--bg3); }
+@media (max-width: 479px) { .primary a { padding: 0 8px; } }
+@media (min-width: 960px) {
+  .site-head { position: sticky; top: 0; z-index: 10; }
+  .primary { order: 0; width: auto; margin-inline: auto 0; }
+  .primary ul { flex-wrap: wrap; overflow: visible; padding: 0; }
+  .lang { margin-left: 8px; }
+}
+
+/* Type */
+.eyebrow { display: block; font: 500 .75rem/1.4 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--gold); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2.25rem, 1.3rem + 4.4vw, 4.25rem); line-height: 1.05; letter-spacing: -.015em; margin-top: 16px; max-width: 16ch; }
+h1 em { font-style: normal; color: var(--gold-2); }
+h2 { font-size: clamp(1.75rem, 1.3rem + 1.9vw, 2.6rem); line-height: 1.15; letter-spacing: -.01em; margin-top: 12px; max-width: 30ch; }
+h3 { font-size: 1.375rem; line-height: 1.25; }
+.intro { color: var(--dim); max-width: 64ch; margin-top: 16px; font-size: 1.0625rem; }
+
+/* Buttons and links */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px; border: 1px solid transparent; border-radius: var(--r-sm); font-weight: 600; font-size: .95rem; text-decoration: none; transition: background-color .15s, border-color .15s, color .15s; }
+.btn-primary { color: var(--on-gold); background-color: var(--gold); background-image: linear-gradient(135deg, var(--gold-2), var(--gold)); }
+.btn-primary:hover { background-image: none; background-color: var(--gold-2); }
+.btn-ghost { color: var(--fg); border-color: var(--line-strong); background: transparent; }
+.btn-ghost:hover { border-color: var(--gold); color: var(--gold-2); }
+.link { display: inline-flex; align-items: center; min-height: 44px; color: var(--gold-2); font-weight: 600; font-size: .95rem; text-decoration: underline; text-decoration-color: rgba(230,194,148,.45); text-underline-offset: 4px; transition: text-decoration-color .15s; }
+.link:hover { text-decoration-color: currentColor; }
+/* The arrow is decoration: the second content line gives it empty alt text where supported, so it stays out of link names. */
+.ext::after { content: "\2197"; content: "\2197" / ""; display: inline-block; margin-left: 4px; font-weight: 400; }
+
+/* Hero */
+.hero { padding-block: 56px 48px; }
+.lead { color: var(--dim); max-width: 60ch; margin-top: 24px; font-size: clamp(1.0625rem, 1rem + .35vw, 1.25rem); line-height: 1.6; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.facts-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 20px; margin-top: 28px; color: var(--muted); font: 500 .75rem/1.5 var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.facts-lead { color: var(--dim); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 0; padding: 0; list-style: none; }
+.facts li { display: inline-flex; align-items: center; gap: 8px; }
+.facts li::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--gold); }
+/* On phones the family panel is hidden, so the hero names the four apps in one compact row. */
+.apps-inline { margin-top: 24px; }
+.apps-inline ul { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.apps-inline a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--fg); text-decoration: none; font: 600 1rem/1 var(--serif); transition: border-color .15s, color .15s; }
+.apps-inline a:hover { border-color: var(--gold); color: var(--gold-2); }
+@media (min-width: 960px) { .apps-inline { display: none; } }
+.family { display: none; }
+@media (min-width: 960px) {
+  .hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .85fr); gap: 64px; align-items: center; padding-block: 72px 80px; }
+  .family { display: block; padding: 8px 0; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); }
+}
+.family-label { padding: 14px 20px 6px; font: 500 .7rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.family ul { margin: 0; padding: 0; list-style: none; }
+.family li + li { border-top: 1px solid var(--line); }
+.family a { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; align-items: baseline; gap: 12px; min-height: 48px; padding: 12px 20px; color: var(--dim); text-decoration: none; font-size: .925rem; transition: background-color .15s, color .15s; }
+.family a:hover { background: var(--bg3); color: var(--fg); }
+.family a:focus-visible { outline-offset: -3px; }
+.family a::after { content: "\2197"; content: "\2197" / ""; color: var(--gold); }
+.f-name { font: 600 1.05rem/1.3 var(--serif); color: var(--fg); }
+
+/* Sections */
+.section { padding-block: 64px; border-top: 1px solid var(--line); }
+@media (min-width: 960px) { .section { padding-block: 88px; } }
+[id] { scroll-margin-top: 16px; }
+@media (min-width: 960px) { html { scroll-padding-top: 72px; } [id] { scroll-margin-top: 0; } }
+
+/* Apps */
+.apps { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 32px; }
+@media (min-width: 600px) { .apps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 960px) { .apps { gap: 24px; } }
+.app { display: flex; flex-direction: column; min-width: 0; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; transition: border-color .2s; }
+.app:hover { border-color: var(--line-strong); }
+.media { position: relative; margin: 0; aspect-ratio: 16 / 10; background: #262c44; border-bottom: 1px solid var(--line); overflow: hidden; }
+.media img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.media video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.play { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: flex-start; width: 100%; padding: 14px; margin: 0; border: 0; border-radius: 0; background: linear-gradient(to top, rgba(26,29,41,.7), rgba(26,29,41,0) 55%); color: var(--fg); font: inherit; cursor: pointer; }
+.play:focus-visible { outline-offset: -4px; border-radius: var(--r) var(--r) 0 0; }
+.play-pill { display: inline-flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; border: 1px solid var(--line-strong); border-radius: 999px; background: rgba(38,44,68,.92); font-weight: 600; font-size: .9rem; transition: border-color .15s; }
+.play:hover .play-pill { border-color: var(--gold); }
+.play-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--gold-2), var(--gold)); }
+.play-icon svg { width: 13px; height: 13px; margin-left: 2px; fill: var(--on-gold); }
+.app-body { display: flex; flex-direction: column; gap: 12px; flex: 1; padding: 20px; }
+@media (min-width: 960px) { .app-body { padding: 24px; } }
+.kicker { font: 500 .72rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--gold); }
+.app p { color: var(--dim); }
+.app .local { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg3); font-size: .925rem; }
+.local b { color: var(--gold-2); font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; margin-top: auto; padding-top: 4px; }
+
+.also { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 24px; }
+@media (min-width: 600px) { .also { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.also > div { padding: 20px; border: 1px dashed var(--line-strong); border-radius: var(--r); }
+.also h3 { font-size: 1.125rem; }
+.also p { color: var(--dim); margin-top: 8px; font-size: .95rem; }
+
+/* Panels */
+.split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 32px; }
+@media (min-width: 960px) { .split { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; } }
+.panel { padding: 24px; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.panel h3 { display: flex; align-items: center; gap: 10px; font-size: 1.2rem; }
+.dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); }
+.dot.net { background: var(--violet); }
+.list { margin: 14px 0 0; padding: 0; list-style: none; }
+.list li { padding: 11px 0; border-top: 1px solid var(--line); color: var(--dim); }
+.list li:first-child { border-top: 0; padding-top: 4px; }
+.note { margin-top: 16px; color: var(--muted); font-size: .925rem; }
+
+/* Engine */
+.engine { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; margin-top: 32px; align-items: start; }
+@media (min-width: 960px) { .engine { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; } }
+.prose p { color: var(--dim); max-width: 62ch; font-size: 1.0625rem; }
+.prose p + p { margin-top: 16px; }
+.spec { margin: 0; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg2); overflow: hidden; }
+.spec > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 14px 18px; border-top: 1px solid var(--line); }
+.spec > div:first-child { border-top: 0; }
+@media (min-width: 600px) { .spec > div { grid-template-columns: 9.5rem minmax(0, 1fr); gap: 16px; } }
+.spec dt { padding-top: 3px; font: 500 .72rem/1.5 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--gold-2); }
+.spec dd { margin: 0; color: var(--dim); font-size: .95rem; }
+
+/* Agents */
+.agents-head { display: grid; gap: 24px; align-items: end; }
+@media (min-width: 960px) { .agents-head { grid-template-columns: minmax(0, 1fr) auto; } }
+.braid-art { width: 100%; max-width: 300px; height: auto; }
+.tools { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 32px; }
+@media (min-width: 960px) { .tools { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; } }
+.tool { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 24px; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); transition: border-color .2s; }
+.tool:hover { border-color: var(--line-strong); }
+.tag { align-self: flex-start; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 999px; font: 500 .7rem/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.tag.open { color: var(--gold-2); border-color: rgba(200,160,106,.5); }
+.tag.service { color: var(--violet-text); border-color: rgba(130,114,255,.55); }
+.tag.network { color: var(--fg); }
+.tool p { color: var(--dim); }
+.tool .small { color: var(--muted); font-size: .925rem; }
+.tool .notice { padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; }
+.tool .actions { margin-top: auto; }
+
+/* Source */
+.source { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 32px; align-items: start; }
+@media (min-width: 960px) { .source { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; } }
+.repos { margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg2); overflow: hidden; }
+.repos li + li { border-top: 1px solid var(--line); }
+.repos a { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 16px; padding: 14px 18px; color: inherit; text-decoration: none; transition: background-color .15s; }
+.repos a:hover { background: var(--bg3); }
+.repos a:focus-visible { outline-offset: -3px; }
+.repo-name { font: 500 .92rem/1.5 var(--mono); color: var(--gold-2); white-space: nowrap; }
+.lic { align-self: center; font: 500 .7rem/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: right; }
+.lic.none { color: #e5a53a; }
+.repo-what { grid-column: 1 / -1; color: var(--dim); font-size: .925rem; }
+.closed .list li b { color: var(--fg); font-weight: 600; }
+
+/* Diary */
+.reads { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; margin-top: 32px; }
+@media (min-width: 600px) { .reads { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; } }
+.read { display: flex; flex-direction: column; gap: 10px; padding: 24px; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r); }
+.read p { color: var(--dim); }
+.read .actions { margin-top: auto; }
+
+/* Footer */
+.site-foot { border-top: 1px solid var(--line); padding-block: 40px 56px; color: var(--muted); font-size: .925rem; }
+.foot-row { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-start; justify-content: space-between; }
+.foot-brand { display: flex; flex-direction: column; gap: 8px; max-width: 36ch; }
+.foot-brand .brand { align-self: flex-start; font-size: 1.15rem; }
+.foot-brand .brand svg { width: 22px; height: 22px; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 0 18px; margin: 0; padding: 0; list-style: none; }
+.foot-links a { display: inline-flex; align-items: center; min-height: 40px; color: var(--dim); text-decoration: none; }
+.foot-links a:hover { color: var(--gold-2); text-decoration: underline; text-underline-offset: 4px; }
+
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .lang button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+}
+
+/* Buttons */
+.btn { min-height: 50px; padding: 0 24px; gap: 10px; border-radius: 14px; font-size: 1rem; letter-spacing: -.005em;
+  transition: transform .18s cubic-bezier(.16,1,.3,1), box-shadow .18s cubic-bezier(.16,1,.3,1), background-color .15s, border-color .15s; }
+.btn:active { transform: translateY(1px) scale(.985); }
+.btn-primary { border-color: rgba(255,255,255,.18); background-color: #d9b27a; background-image: linear-gradient(180deg, #f0d2a4, #d3a96e); color: #1b1408;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.25), 0 12px 26px -10px rgba(230,194,148,.55); }
+.btn-primary:hover { background-image: linear-gradient(180deg, #f7dcb4, #dcb57b); background-color: #e6c294; transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6), 0 1px 2px rgba(0,0,0,.25), 0 16px 30px -10px rgba(230,194,148,.7); }
+.btn-primary::after { content: ""; width: 18px; height: 18px; background: currentColor; flex: none; transition: transform .18s cubic-bezier(.16,1,.3,1);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat; }
+.btn-primary:hover::after { transform: translateX(3px); }
+.btn-ghost { background: rgba(255,255,255,.06); color: var(--fg); border-color: var(--line-strong); box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.btn-ghost:hover { background: rgba(255,255,255,.12); border-color: var(--gold-2); color: var(--gold-2); transform: translateY(-1px); box-shadow: 0 12px 22px -12px rgba(0,0,0,.5); }
+@media (prefers-reduced-motion: reduce) { .btn, .btn:hover, .btn:active { transform: none; } .btn-primary:hover::after { transform: none; } }
+
+/* A light, slow aurora: teal, violet, brass and a touch of magenta. */
+body { position: relative; isolation: isolate; }
+body::before { content: ""; position: fixed; inset: -25% -15%; z-index: -1; pointer-events: none; filter: blur(52px); will-change: transform;
+  background:
+    radial-gradient(38rem 26rem at 10% 6%, rgba(84,220,198,.22), transparent 70%),
+    radial-gradient(42rem 28rem at 88% 4%, rgba(130,114,255,.34), transparent 70%),
+    radial-gradient(34rem 24rem at 72% 64%, rgba(231,121,207,.14), transparent 70%),
+    radial-gradient(40rem 26rem at 16% 80%, rgba(200,160,106,.20), transparent 70%);
+  animation: aurora 48s ease-in-out infinite alternate; }
+@keyframes aurora { from { transform: translate3d(-2%, -1%, 0) scale(1); } to { transform: translate3d(3%, 2%, 0) scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+.site-head { backdrop-filter: saturate(1.4) blur(14px); -webkit-backdrop-filter: saturate(1.4) blur(14px); }
+.section { border-top: 0; position: relative; }
+.section::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(84,220,198,.6), rgba(169,156,255,.65), rgba(231,121,207,.5), rgba(230,194,148,.6), transparent); }
+.facts li:nth-child(4n+1)::before { background: #54dcc6; }
+.facts li:nth-child(4n+2)::before { background: #a99cff; }
+.facts li:nth-child(4n+3)::before { background: #e6c294; }
+.facts li:nth-child(4n+4)::before { background: #e779cf; }
+.family { position: relative; overflow: hidden; background: rgba(57,65,95,.7); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.family::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, #54dcc6, #8272ff, #e779cf, #c8a06a); }
+.app, .tool, .panel, .read, .also > div, .spec { background: rgba(57,65,95,.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.dot { background: #54dcc6; }
+.dot.net { background: #a99cff; }
+.play-icon { background: linear-gradient(135deg, #8272ff, #54dcc6); }
+.family a:hover { background: rgba(130,114,255,.16); }
+/* The tools of the hero card are small bubbles, each with a coloured dot. */
+.family .bubbles { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 20px 16px; }
+.family .bubbles a { display: inline-flex; align-items: center; gap: 8px; grid-template-columns: none; min-height: 0; padding: 7px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: rgba(255,255,255,.06); font-size: .95rem; color: var(--fg); transition: transform .18s cubic-bezier(.16,1,.3,1), border-color .15s, background-color .15s; }
+.family .bubbles a::after { content: none; }
+.family .bubbles a:hover { background: rgba(255,255,255,.14); border-color: var(--gold-2); transform: translateY(-1px); }
+.family .bubbles a.all { border-style: dashed; color: var(--gold-2); }
+.family .bubbles a.all::after { content: "\2192"; content: "\2192" / ""; color: var(--gold); }
+.dot-c { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--gold); box-shadow: 0 0 10px currentColor; }
+.dot-c[data-c="cutout"] { background: #54dcc6; color: #54dcc6; }
+.dot-c[data-c="ocr"] { background: #a99cff; color: #a99cff; }
+.dot-c[data-c="detect"] { background: #e6c294; color: #e6c294; }
+.dot-c[data-c="depth"] { background: #e779cf; color: #e779cf; }
+@media (prefers-reduced-motion: reduce) { .family .bubbles a:hover { transform: none; } }
+
+
+/* The Elffuss mark */
+.elffuss-mark {
+  --mark-ease: cubic-bezier(.16, 1, .3, 1);
+  display: inline-flex; align-items: center; gap: .5rem;
+  color: var(--fg, #f1eff7); text-decoration: none;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  font-weight: 700; font-size: 1.25rem; letter-spacing: -.01em; line-height: 1;
+  border-radius: 10px;
+}
+.elffuss-mark svg { width: 1.7em; height: 1.7em; flex: none; overflow: visible; transform-origin: 50% 90%; transition: transform .28s var(--mark-ease); }
+.elffuss-mark .leaf { fill: var(--accent, #c8a06a); transition: fill .28s; }
+.elffuss-mark .eye { fill: var(--bg, #090a11); }
+.elffuss-mark .spark { fill: var(--teal, #54dcc6); opacity: 0; transform: scale(.2) rotate(-30deg); transform-origin: 31px 6.5px; transition: opacity .2s .08s, transform .3s .08s var(--mark-ease); }
+.elffuss-mark .word { position: relative; padding-bottom: 3px; }
+.elffuss-mark .word::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--teal, #54dcc6), var(--accent2, #8272ff), var(--accent, #c8a06a));
+  transform: scaleX(0); transform-origin: left; transition: transform .28s var(--mark-ease);
+}
+
+.elffuss-mark:hover svg, .elffuss-mark:focus-visible svg { transform: translateY(-1px) rotate(-8deg); }
+.elffuss-mark:hover .leaf, .elffuss-mark:focus-visible .leaf { fill: #e6c294; }
+.elffuss-mark:hover .spark, .elffuss-mark:focus-visible .spark { opacity: 1; transform: scale(1) rotate(0); }
+.elffuss-mark:hover .word::after, .elffuss-mark:focus-visible .word::after { transform: scaleX(1); }
+.elffuss-mark:focus-visible { outline: 2px solid var(--teal, #54dcc6); outline-offset: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .elffuss-mark svg, .elffuss-mark .spark, .elffuss-mark .word::after { transition: none; }
+  .elffuss-mark:hover svg, .elffuss-mark:focus-visible svg { transform: none; }
+  .elffuss-mark .spark { display: none; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main"><span data-l="en">Skip to content</span><span data-l="es" lang="es">Saltar al contenido</span></a>
+
+<header class="site-head">
+  <div class="wrap head-row">
+    <a class="brand elffuss-mark" href="/" aria-label="Elffuss: all apps" data-aria-en="Elffuss: all apps" data-aria-es="Elffuss: todas las apps"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word">Elffuss</span></a>
+    <nav class="primary" aria-label="Sections" data-aria-en="Sections" data-aria-es="Secciones">
+      <ul>
+        <li><a href="/">Chat</a></li>
+        <li><a href="#apps">Apps</a></li>
+        <li><a href="#tools"><span data-l="en">Tools</span><span data-l="es" lang="es">Herramientas</span></a></li>
+        <li><a href="#about"><span data-l="en">Your data</span><span data-l="es" lang="es">Tus datos</span></a></li>
+        <li><a href="#engine"><span data-l="en">Engine</span><span data-l="es" lang="es">Motor</span></a></li>
+        <li><a href="#agents"><span data-l="en">Agents</span><span data-l="es" lang="es">Agentes</span></a></li>
+        <li><a href="#source"><span data-l="en">Source</span><span data-l="es" lang="es">Código</span></a></li>
+        <li><a href="#diary"><span data-l="en">Diary</span><span data-l="es" lang="es">Diario</span></a></li>
+        <li><a href="/how-it-works/"><span data-l="en">How it works</span><span data-l="es" lang="es">Cómo funciona</span></a></li>
+      </ul>
+    </nav>
+    <div class="lang needs-js" role="group" aria-label="Language" data-aria-en="Language" data-aria-es="Idioma">
+      <button type="button" data-set-lang="en" lang="en" aria-label="English" aria-pressed="true">EN</button>
+      <button type="button" data-set-lang="es" lang="es" aria-label="Español" aria-pressed="false">ES</button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap hero">
+    <div class="hero-text">
+    <span class="eyebrow"><span data-l="en">Free AI apps for the browser</span><span data-l="es" lang="es">Apps de IA gratuitas para el navegador</span></span>
+    <h1><span data-l="en">AI that runs in your browser, <em>on your own GPU.</em></span><span data-l="es" lang="es">IA que corre en tu navegador, <em>en tu propia GPU.</em></span></h1>
+    <p class="lead" data-l="en">Elffuss is a family of free web apps that run AI models inside your browser tab through WebGPU. The model runs locally, so unless you choose an outside provider, your prompts, files, code and audio are processed on your machine.</p>
+    <p class="lead" data-l="es" lang="es">Elffuss es una familia de apps web gratuitas que ejecutan modelos de IA dentro de la pestaña del navegador, a través de WebGPU. El modelo corre en local, así que, salvo que elijas un proveedor externo, tus peticiones, archivos, código y audio se procesan en tu equipo.</p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#apps"><span data-l="en">See the apps</span><span data-l="es" lang="es">Ver las apps</span></a>
+      <a class="btn btn-ghost" href="#about"><span data-l="en">What stays on your machine</span><span data-l="es" lang="es">Qué se queda en tu equipo</span></a>
+    </div>
+    <nav class="apps-inline" aria-label="The four apps" data-aria-en="The four apps" data-aria-es="Las cuatro apps">
+      <ul>
+        <li><a href="https://claw.elffuss.com">Claw</a></li>
+        <li><a href="https://code.elffuss.com">Code</a></li>
+        <li><a href="https://translator.elffuss.com">Translator</a></li>
+        <li><a href="https://copilot.elffuss.com"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></a></li>
+      </ul>
+    </nav>
+    <div class="facts-row">
+      <span class="facts-lead"><span data-l="en">The four apps:</span><span data-l="es" lang="es">Las cuatro apps:</span></span>
+      <ul class="facts">
+        <li><span data-l="en">Free</span><span data-l="es" lang="es">Gratis</span></li>
+        <li><span data-l="en">No account</span><span data-l="es" lang="es">Sin cuenta</span></li>
+        <li><span data-l="en">No API key</span><span data-l="es" lang="es">Sin clave de API</span></li>
+        <li><span data-l="en">Nothing to install</span><span data-l="es" lang="es">Sin instalar nada</span></li>
+      </ul>
+    </div>
+    </div>
+    <nav class="family" aria-label="The Elffuss family" data-aria-en="The Elffuss family" data-aria-es="La familia Elffuss">
+      <p class="family-label"><span data-l="en">Apps</span><span data-l="es" lang="es">Apps</span></p>
+      <ul>
+        <li><a href="https://claw.elffuss.com"><span class="f-name">Claw</span><span><span data-l="en">Builds small apps from a chat</span><span data-l="es" lang="es">Construye pequeñas apps desde un chat</span></span></a></li>
+        <li><a href="https://code.elffuss.com"><span class="f-name">Code</span><span><span data-l="en">Edits your project with you</span><span data-l="es" lang="es">Edita tu proyecto contigo</span></span></a></li>
+        <li><a href="https://translator.elffuss.com"><span class="f-name">Translator</span><span><span data-l="en">Translates a conversation aloud</span><span data-l="es" lang="es">Traduce una conversación en voz alta</span></span></a></li>
+        <li><a href="https://copilot.elffuss.com"><span class="f-name"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></span><span><span data-l="en">Turns a call into a customer record</span><span data-l="es" lang="es">Convierte una llamada en una ficha</span></span></a></li>
+      </ul>
+      <p class="family-label"><span data-l="en">Tools</span><span data-l="es" lang="es">Herramientas</span></p>
+      <div class="bubbles">
+        <a href="https://cutout.elffuss.com" aria-label="Cutout: Removes the background from a photo" data-aria-en="Cutout: Removes the background from a photo" data-aria-es="Cutout: Quita el fondo de una foto"><i class="dot-c" data-c="cutout"></i><span>Cutout</span></a>
+        <a href="https://ocr.elffuss.com" aria-label="OCR: Reads text from images and PDFs, even whole folders" data-aria-en="OCR: Reads text from images and PDFs, even whole folders" data-aria-es="OCR: Lee el texto de imágenes y PDF, también carpetas enteras"><i class="dot-c" data-c="ocr"></i><span>OCR</span></a>
+        <a href="https://detect.elffuss.com" aria-label="Detect: Finds objects in a photo or the camera" data-aria-en="Detect: Finds objects in a photo or the camera" data-aria-es="Detect: Encuentra objetos en una foto o la cámara"><i class="dot-c" data-c="detect"></i><span>Detect</span></a>
+        <a href="https://depth.elffuss.com" aria-label="Depth: Turns a photo into a depth map" data-aria-en="Depth: Turns a photo into a depth map" data-aria-es="Depth: Convierte una foto en un mapa de profundidad"><i class="dot-c" data-c="depth"></i><span>Depth</span></a>
+        <a class="all" href="https://tools.elffuss.com" aria-label="All tools: Every Elffuss tool in one place" data-aria-en="All tools: Every Elffuss tool in one place" data-aria-es="Todas: Todas las herramientas de Elffuss en un solo sitio"><span data-l="en">All tools</span><span data-l="es" lang="es">Todas</span></a>
+      </div>
+      <p class="family-label"><span data-l="en">For building with agents</span><span data-l="es" lang="es">Para construir con agentes</span></p>
+      <ul>
+        <li><a href="https://braid.elffuss.com"><span class="f-name">Braid</span><span><span data-l="en">Version control for many agents</span><span data-l="es" lang="es">Control de versiones para muchos agentes</span></span></a></li>
+        <li><a href="https://braidhub.elffuss.com/"><span class="f-name">BraidHub</span><span><span data-l="en">The hosted hub for Braid</span><span data-l="es" lang="es">El hub alojado de Braid</span></span></a></li>
+      </ul>
+    </nav>
+  </div>
+
+  <section class="section" id="apps" aria-labelledby="apps-title">
+    <div class="wrap">
+      <span class="eyebrow"><span data-l="en">The apps</span><span data-l="es" lang="es">Las apps</span></span>
+      <h2 id="apps-title"><span data-l="en">Four apps. The model runs in the tab.</span><span data-l="es" lang="es">Cuatro apps. El modelo corre en la pestaña.</span></h2>
+      <p class="intro" data-l="en">Open one and start. The first time, your browser downloads the model, which can take a few gigabytes, and keeps it for the next visit. The language models need a browser with WebGPU.</p>
+      <p class="intro" data-l="es" lang="es">Abre una y empieza. La primera vez, el navegador descarga el modelo, que puede ocupar unos cuantos gigas, y lo guarda para la próxima visita. Los modelos de lenguaje necesitan un navegador con WebGPU.</p>
+
+      <div class="apps">
+        <article class="app" aria-labelledby="claw-title">
+          <figure class="media">
+            <img src="/img/claw-960.webp" width="960" height="600" loading="lazy" decoding="async"
+              alt="Claw: in the chat on the left someone asks for a notes app, and the app it built appears on the right."
+              data-alt-en="Claw: in the chat on the left someone asks for a notes app, and the app it built appears on the right."
+              data-alt-es="Claw: en el chat de la izquierda alguien pide una app de notas, y la app que ha construido aparece a la derecha.">
+            <button class="play needs-js" type="button" data-src="/claw-demo.mp4" data-w="1440" data-h="900" data-muted
+              aria-label="Watch the demo: Claw" data-aria-en="Watch the demo: Claw" data-aria-es="Ver la demo: Claw">
+              <span class="play-pill"><span class="play-icon" aria-hidden="true"><svg viewBox="0 0 12 14"><path d="M0 0v14l12-7z"/></svg></span><span data-l="en">Watch the demo</span><span data-l="es" lang="es">Ver la demo</span></span>
+            </button>
+          </figure>
+          <div class="app-body">
+            <span class="kicker"><span data-l="en">Claw · for everyone</span><span data-l="es" lang="es">Claw · para todo el mundo</span></span>
+            <h3 id="claw-title"><span data-l="en">Ask for an app, and it appears in the tab</span><span data-l="es" lang="es">Pide una app y aparece en la pestaña</span></h3>
+            <p data-l="en">Ask in the chat for something you need, such as a mortgage calculator or a weekly plan, and Claw builds a small app on the spot, inside the same tab. It also remembers what you tell it, sets reminders while the tab is open and keeps your passwords in an encrypted vault.</p>
+            <p data-l="es" lang="es">Pide en el chat lo que necesites, como una calculadora de hipoteca o el plan de la semana, y Claw construye una pequeña app al momento, en la misma pestaña. Además recuerda lo que le cuentas, programa recordatorios que te avisan mientras la pestaña está abierta y guarda tus claves en una bóveda cifrada.</p>
+            <p class="local" data-l="en"><b>On your machine:</b> the apps it builds, your history, its memory and the vault, kept in the browser or in a folder you allow.</p>
+            <p class="local" data-l="es" lang="es"><b>En tu equipo:</b> las apps que construye, tu historial, su memoria y la bóveda, guardados en el navegador o en una carpeta que autorices.</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://claw.elffuss.com"><span data-l="en">Open Claw</span><span data-l="es" lang="es">Abrir Claw</span></a>
+              <a class="link ext" href="https://github.com/utopia-ia/elffuss-claw" rel="noopener" aria-label="Source code of Claw on GitHub" data-aria-en="Source code of Claw on GitHub" data-aria-es="Código fuente de Claw en GitHub"><span data-l="en">Source code</span><span data-l="es" lang="es">Código fuente</span></a>
+            </div>
+          </div>
+        </article>
+
+        <article class="app" aria-labelledby="code-title">
+          <figure class="media">
+            <img src="/img/code-960.webp" width="960" height="600" loading="lazy" decoding="async"
+              alt="Code: a project open in the editor, with the assistant reading and fixing calc.py in the side panel."
+              data-alt-en="Code: a project open in the editor, with the assistant reading and fixing calc.py in the side panel."
+              data-alt-es="Code: un proyecto abierto en el editor, con el asistente leyendo y corrigiendo calc.py en el panel lateral.">
+            <button class="play needs-js" type="button" data-src="/code-demo.mp4" data-w="1440" data-h="900" data-muted
+              aria-label="Watch the demo: Code" data-aria-en="Watch the demo: Code" data-aria-es="Ver la demo: Code">
+              <span class="play-pill"><span class="play-icon" aria-hidden="true"><svg viewBox="0 0 12 14"><path d="M0 0v14l12-7z"/></svg></span><span data-l="en">Watch the demo</span><span data-l="es" lang="es">Ver la demo</span></span>
+            </button>
+          </figure>
+          <div class="app-body">
+            <span class="kicker"><span data-l="en">Code · for developers</span><span data-l="es" lang="es">Code · para desarrolladores</span></span>
+            <h3 id="code-title"><span data-l="en">A code editor whose assistant edits with you</span><span data-l="es" lang="es">Un editor de código cuyo asistente edita contigo</span></h3>
+            <p data-l="en">A code editor in the browser, built on the VS Code editor core. Open a folder from your disk and the assistant reads, searches and edits the project with you, while the city view shows which files it touches. With an optional local bridge, it can also run node, npm and python.</p>
+            <p data-l="es" lang="es">Un editor de código en el navegador, construido sobre el núcleo del editor de VS Code. Abres una carpeta de tu disco y el asistente lee, busca y edita el proyecto contigo, mientras la vista de ciudad muestra qué ficheros toca. Con un puente local opcional, también puede ejecutar node, npm y python.</p>
+            <p class="local" data-l="en"><b>On your machine:</b> your code, as long as you use a local model.</p>
+            <p class="local" data-l="es" lang="es"><b>En tu equipo:</b> tu código, mientras uses un modelo local.</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://code.elffuss.com"><span data-l="en">Open Code</span><span data-l="es" lang="es">Abrir Code</span></a>
+              <a class="link ext" href="https://github.com/utopia-ia/elffuss-code" rel="noopener" aria-label="Source code of Code on GitHub" data-aria-en="Source code of Code on GitHub" data-aria-es="Código fuente de Code en GitHub"><span data-l="en">Source code</span><span data-l="es" lang="es">Código fuente</span></a>
+            </div>
+          </div>
+        </article>
+
+        <article class="app" aria-labelledby="translator-title">
+          <figure class="media">
+            <img src="/img/translator-960.webp" width="960" height="600" loading="lazy" decoding="async"
+              alt="Translator: the start screen, in Spanish, where you pick the two languages of the conversation and the microphone."
+              data-alt-en="Translator: the start screen, in Spanish, where you pick the two languages of the conversation and the microphone."
+              data-alt-es="Translator: la pantalla de inicio, donde eliges los dos idiomas de la conversación y el micrófono.">
+            <button class="play needs-js" type="button" data-src="/translator-demo.mp4" data-w="1280" data-h="720"
+              aria-label="Watch the demo: Translator" data-aria-en="Watch the demo: Translator" data-aria-es="Ver la demo: Translator">
+              <span class="play-pill"><span class="play-icon" aria-hidden="true"><svg viewBox="0 0 12 14"><path d="M0 0v14l12-7z"/></svg></span><span data-l="en">Watch the demo</span><span data-l="es" lang="es">Ver la demo</span></span>
+            </button>
+          </figure>
+          <div class="app-body">
+            <span class="kicker"><span data-l="en">Translator · for conversations</span><span data-l="es" lang="es">Translator · para conversaciones</span></span>
+            <h3 id="translator-title"><span data-l="en">A conversation across languages, sentence by sentence</span><span data-l="es" lang="es">Una conversación entre idiomas, frase a frase</span></h3>
+            <p data-l="en">Put it on the table while people who speak different languages talk. It works out who is speaking and translates each sentence on screen and aloud. It works best when people take turns.</p>
+            <p data-l="es" lang="es">Déjalo en la mesa mientras hablan personas de idiomas distintos. Distingue quién habla y traduce cada frase en pantalla y en voz alta. Funciona mejor cuando se habla por turnos.</p>
+            <p class="local" data-l="en"><b>On your machine:</b> listening, telling the voices apart and translating all happen in the browser.</p>
+            <p class="local" data-l="es" lang="es"><b>En tu equipo:</b> escuchar, distinguir las voces y traducir ocurre todo en el navegador.</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://translator.elffuss.com"><span data-l="en">Open Translator</span><span data-l="es" lang="es">Abrir Translator</span></a>
+              <a class="link ext" href="https://github.com/utopia-ia/elffuss-translator" rel="noopener" aria-label="Source code of Translator on GitHub" data-aria-en="Source code of Translator on GitHub" data-aria-es="Código fuente de Translator en GitHub"><span data-l="en">Source code</span><span data-l="es" lang="es">Código fuente</span></a>
+            </div>
+          </div>
+        </article>
+
+        <article class="app" aria-labelledby="copilot-title">
+          <figure class="media">
+            <img src="/img/copilot-960.webp" width="960" height="600" loading="lazy" decoding="async"
+              data-src-en="/img/copilot-960.webp" data-src-es="/img/copilot-es-960.webp"
+              alt="Copilot: the start screen, where you choose the kind of record and the language of the call."
+              data-alt-en="Copilot: the start screen, where you choose the kind of record and the language of the call."
+              data-alt-es="Copiloto: la pantalla de inicio, donde eliges el tipo de ficha y el idioma de la llamada.">
+          </figure>
+          <div class="app-body">
+            <span class="kicker"><span data-l="en">Copilot · for client calls</span><span data-l="es" lang="es">Copiloto · para llamadas con clientes</span></span>
+            <h3 id="copilot-title"><span data-l="en">The call becomes a customer record</span><span data-l="es" lang="es">La llamada se convierte en una ficha</span></h3>
+            <p data-l="en">It listens to a client call and fills in the customer record as you talk: name, company, role, phone, email, budget and timeline. With the optional advanced AI, which needs WebGPU, it also notes what they need and the next step. Download the record as CSV, or send it with one click to your own webhook or Google Form.</p>
+            <p data-l="es" lang="es">Escucha una llamada con un cliente y rellena la ficha mientras habláis: nombre, empresa, cargo, teléfono, email, presupuesto y plazo. Con la IA avanzada opcional, que necesita WebGPU, anota también qué necesita y cuál es el siguiente paso. Descarga la ficha en CSV o mándala con un clic a tu propio webhook o a tu formulario de Google.</p>
+            <p class="local" data-l="en"><b>On your machine:</b> the audio and the voiceprints. Only the record leaves, to the destination you set, when you press Send.</p>
+            <p class="local" data-l="es" lang="es"><b>En tu equipo:</b> el audio y las huellas de voz. Solo sale la ficha, al destino que configures, cuando pulsas Enviar.</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://copilot.elffuss.com"><span data-l="en">Open Copilot</span><span data-l="es" lang="es">Abrir Copiloto</span></a>
+              <a class="link ext" href="https://github.com/utopia-ia/elffuss-copilot" rel="noopener" aria-label="Source code of Copilot on GitHub" data-aria-en="Source code of Copilot on GitHub" data-aria-es="Código fuente de Copiloto en GitHub"><span data-l="en">Source code</span><span data-l="es" lang="es">Código fuente</span></a>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="also">
+        <div>
+          <h3><span data-l="en">Apps that work together</span><span data-l="es" lang="es">Apps que trabajan juntas</span></h3>
+          <p data-l="en">Translator can open Claw in a second window and pass it the transcript, so Claw can suggest arguments while you talk.</p>
+          <p data-l="es" lang="es">Translator puede abrir Claw en otra ventana y pasarle la transcripción, para que Claw te sugiera argumentos mientras hablas.</p>
+        </div>
+        <div>
+          <h3><span data-l="en">Skills for Claw</span><span data-l="es" lang="es">Skills para Claw</span></h3>
+          <p data-l="en">Skills teach Claw particular jobs: a printable 3D object from a description, a document turned into an Excel file with formulas and charts, or web research that ends in a concrete deliverable. You install them from Claw's Skills tab.</p>
+          <p data-l="es" lang="es">Las skills enseñan a Claw trabajos concretos: un objeto 3D imprimible a partir de una descripción, un documento convertido en un Excel con fórmulas y gráficos, o una búsqueda web que acaba en un entregable concreto. Se instalan desde la pestaña Skills de Claw.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="tools" aria-labelledby="tools-title">
+    <div class="wrap">
+      <span class="eyebrow"><span data-l="en">Tools</span><span data-l="es" lang="es">Herramientas</span></span>
+      <h2 id="tools-title"><span data-l="en">Small tools that also run in your browser</span><span data-l="es" lang="es">Herramientas pequeñas que también corren en tu navegador</span></h2>
+      <p class="lead" data-l="en">Each one downloads its model once, and it stays in this browser.</p>
+      <p class="lead" data-l="es" lang="es">Cada una descarga su modelo una vez, y se queda en este navegador.</p>
+      <div class="also">
+        <div>
+          <h3><a href="https://cutout.elffuss.com"><span data-l="en">Cutout</span><span data-l="es" lang="es">Cutout</span></a></h3>
+          <p data-l="en">Remove the background from a photo and download it as a transparent PNG.</p>
+          <p data-l="es" lang="es">Quita el fondo de una foto y descárgala como PNG transparente.</p>
+        </div>
+        <div>
+          <h3><a href="https://ocr.elffuss.com"><span data-l="en">OCR</span><span data-l="es" lang="es">OCR</span></a></h3>
+          <p data-l="en">Read the text in images and PDFs, even whole folders, and export it.</p>
+          <p data-l="es" lang="es">Lee el texto de imágenes y PDF, incluso carpetas enteras, y expórtalo.</p>
+        </div>
+        <div>
+          <h3><a href="https://detect.elffuss.com"><span data-l="en">Detect</span><span data-l="es" lang="es">Detect</span></a></h3>
+          <p data-l="en">Detect objects in a photo or live from your camera.</p>
+          <p data-l="es" lang="es">Detecta objetos en una foto o en directo con tu cámara.</p>
+        </div>
+        <div>
+          <h3><a href="https://depth.elffuss.com"><span data-l="en">Depth</span><span data-l="es" lang="es">Depth</span></a></h3>
+          <p data-l="en">Turn a photo into a depth map you can look at in 3D.</p>
+          <p data-l="es" lang="es">Convierte una foto en un mapa de profundidad que puedes ver en 3D.</p>
+        </div>
+        <div>
+          <h3><a href="https://tools.elffuss.com"><span data-l="en">All tools</span><span data-l="es" lang="es">Todas las herramientas</span></a></h3>
+          <p data-l="en">Every Elffuss tool in one place.</p>
+          <p data-l="es" lang="es">Todas las herramientas de Elffuss en un solo sitio.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="about" aria-labelledby="about-title">
+    <div class="wrap">
+      <span class="eyebrow"><span data-l="en">Your data</span><span data-l="es" lang="es">Tus datos</span></span>
+      <h2 id="about-title"><span data-l="en">What stays on your machine</span><span data-l="es" lang="es">Qué se queda en tu equipo</span></h2>
+      <p class="intro" data-l="en">The model runs on hardware you already have, inside a browser tab. That is what lets the apps be free, with no account and no API key, and it means that what you type, open or say is processed where you are.</p>
+      <p class="intro" data-l="es" lang="es">El modelo corre en el hardware que ya tienes, dentro de una pestaña del navegador. Eso es lo que permite que las apps sean gratuitas, sin cuenta ni clave de API, y significa que lo que escribes, abres o dices se procesa donde estás tú.</p>
+      <div class="split">
+        <div class="panel">
+          <h3><span class="dot" aria-hidden="true"></span><span data-l="en">On your machine</span><span data-l="es" lang="es">En tu equipo</span></h3>
+          <ul class="list">
+            <li><span data-l="en">The model, once it has been downloaded</span><span data-l="es" lang="es">El modelo, una vez descargado</span></li>
+            <li><span data-l="en">Your prompts, your chats and what the assistant remembers, while you use a local model</span><span data-l="es" lang="es">Tus peticiones, tus conversaciones y lo que recuerda el asistente, mientras uses un modelo local</span></li>
+            <li><span data-l="en">The files and folders you open, and your code</span><span data-l="es" lang="es">Los archivos y carpetas que abres, y tu código</span></li>
+            <li><span data-l="en">Microphone audio and voiceprints</span><span data-l="es" lang="es">El audio del micrófono y las huellas de voz</span></li>
+          </ul>
+          <p class="note" data-l="en">Folder, microphone and screen access always go through the browser's permission prompt.</p>
+          <p class="note" data-l="es" lang="es">El acceso a carpetas, micrófono y pantalla siempre pasa por el aviso de permisos del navegador.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="engine" aria-labelledby="engine-title">
+    <div class="wrap">
+      <span class="eyebrow"><span data-l="en">The engine</span><span data-l="es" lang="es">El motor</span></span>
+      <h2 id="engine-title"><span data-l="en">A runtime of our own, written for WebGPU</span><span data-l="es" lang="es">Un motor propio, escrito para WebGPU</span></h2>
+      <div class="engine">
+        <div class="prose">
+          <p data-l="en">The Elffuss engine runs GGUF language models in WebGPU, inside a web page: inference runs in your browser, and the weights are read from a server by HTTP range requests. It is written from scratch as WebGPU shaders, and we check it against llama.cpp layer by layer and token by token. By default, Claw and Code run Liquid AI's LFM3 1.7B on it: the Q8_0 file on a computer and the QAD-Q4_0 file on a phone, where it fits in the browser. With the QAD-Q4_0 file it reads a prompt about 1.3 times faster, and writes about 1.8 times faster, than onnxruntime-web with the recipe Liquid AI recommends, in the same browser.</p>
+          <p data-l="es" lang="es">El motor de Elffuss ejecuta modelos de lenguaje GGUF en WebGPU, dentro de una página web: la inferencia corre en tu navegador y los pesos se leen de un servidor por rangos HTTP. Está escrito desde cero como shaders de WebGPU, y lo comprobamos contra llama.cpp capa a capa y palabra a palabra. Por defecto, Claw y Code ejecutan con él LFM3 1.7B de Liquid AI: el fichero Q8_0 en el ordenador y el QAD-Q4_0 en el móvil, donde cabe en el navegador. Con el QAD-Q4_0 lee el prompt unas 1,3 veces más rápido, y escribe unas 1,8 veces más rápido, que onnxruntime-web con la receta que recomienda Liquid AI, en el mismo navegador.</p>
+          <p data-l="en">The same engine also loads Qwen3.5 0.8B and, as advanced options, MiniCPM5 2B and Bonsai 2 27B, Prism ML's 27-billion-parameter ternary model, which comes in a third-party format that llama.cpp does not read. The engine's browser code is published under Apache-2.0.</p>
+          <p data-l="es" lang="es">El mismo motor carga también Qwen3.5 0.8B y, como opciones avanzadas, MiniCPM5 2B y Bonsai 2 27B, el modelo ternario de 27.000 millones de parámetros de Prism ML, que viene en un formato de terceros que llama.cpp no lee. El código del motor para el navegador está publicado con licencia Apache-2.0.</p>
+        </div>
+        <dl class="spec">
+          <div><dt><span data-l="en">Default</span><span data-l="es" lang="es">Por defecto</span></dt><dd><span data-l="en">LFM3 1.7B by Liquid AI through the Elffuss engine: Q8_0 on a computer, QAD-Q4_0 on a phone</span><span data-l="es" lang="es">LFM3 1.7B de Liquid AI con el motor de Elffuss: Q8_0 en el ordenador, QAD-Q4_0 en el móvil</span></dd></div>
+          <div><dt><span data-l="en">Also</span><span data-l="es" lang="es">También</span></dt><dd><span data-l="en">Gemma 4 E4B and E2B, official builds, through LiteRT-LM; Qwen3.5 0.8B through transformers.js (ONNX)</span><span data-l="es" lang="es">Gemma 4 E4B y E2B, builds oficiales, con LiteRT-LM; Qwen3.5 0.8B con transformers.js (ONNX)</span></dd></div>
+          <div><dt><span data-l="en">Elffuss engine</span><span data-l="es" lang="es">Motor Elffuss</span></dt><dd><span data-l="en">GGUF files: LFM3 1.7B (Q8_0 and QAD-Q4_0), Qwen3.5 0.8B and, as advanced options, MiniCPM5 2B and Bonsai 2 27B by Prism ML (ternary, third-party format)</span><span data-l="es" lang="es">Ficheros GGUF: LFM3 1.7B (Q8_0 y QAD-Q4_0), Qwen3.5 0.8B y, como opciones avanzadas, MiniCPM5 2B y Bonsai 2 27B de Prism ML (ternario, formato de terceros)</span></dd></div>
+          <div><dt><span data-l="en">Speech</span><span data-l="es" lang="es">Voz</span></dt><dd><span data-l="en">Whisper, pyannote and WeSpeaker in Translator and Copilot. Translation by the browser's built-in translator, or opus-mt</span><span data-l="es" lang="es">Whisper, pyannote y WeSpeaker en Translator y Copiloto. La traducción, con el traductor integrado del navegador u opus-mt</span></dd></div>
+          <div><dt><span data-l="en">Agent</span><span data-l="es" lang="es">Agente</span></dt><dd><span data-l="en">The tool loop, what to keep when a chat gets long, and skills, all running in the tab</span><span data-l="es" lang="es">El bucle de herramientas, qué conservar cuando la conversación se alarga y las skills, todo dentro de la pestaña</span></dd></div>
+          <div><dt><span data-l="en">No WebGPU</span><span data-l="es" lang="es">Sin WebGPU</span></dt><dd><span data-l="en">The language models need WebGPU. Without it, Code runs only in a basic mode with no model, and Copilot works with rules only. The speech models fall back to the CPU.</span><span data-l="es" lang="es">Los modelos de lenguaje necesitan WebGPU. Sin él, Code solo funciona en un modo básico sin modelo y el Copiloto, solo con reglas. Los modelos de voz pasan a la CPU.</span></dd></div>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="agents" aria-labelledby="agents-title">
+    <div class="wrap">
+      <div class="agents-head">
+        <div>
+          <span class="eyebrow"><span data-l="en">For people who build with agents</span><span data-l="es" lang="es">Para quien construye con agentes</span></span>
+          <h2 id="agents-title"><span data-l="en">Tools for building software with AI agents</span><span data-l="es" lang="es">Herramientas para construir software con agentes de IA</span></h2>
+          <p class="intro" data-l="en">One open-source tool and one hosted service, each labelled for what it is.</p>
+          <p class="intro" data-l="es" lang="es">Una herramienta de código abierto y un servicio alojado, cada uno con la etiqueta de lo que es.</p>
+        </div>
+        <svg class="braid-art" viewBox="0 0 320 96" width="320" height="96" aria-hidden="true" focusable="false"><defs><mask id="braid-cut0" maskUnits="userSpaceOnUse" x="0" y="0" width="320" height="96"><rect x="0" y="0" width="320" height="96" fill="#fff"/><path d="M38.67 21.01C41.17 21.11 43.67 22.42 46.17 24.77C48.67 27.12 51.17 30.51 53.67 34.5C56.17 38.49 58.67 43.08 61.17 47.69C63.67 52.3 66.17 56.92 68.67 60.96M84.67 74.99C87.17 74.89 89.67 73.58 92.17 71.23C94.67 68.88 97.17 65.49 99.67 61.5C102.17 57.51 104.67 52.92 107.17 48.31C109.67 43.7 112.17 39.08 114.67 35.04M130.67 21.01C133.17 21.11 135.67 22.42 138.17 24.77C140.67 27.12 143.17 30.51 145.67 34.5C148.17 38.49 150.67 43.08 153.17 47.69C155.67 52.3 158.17 56.92 160.67 60.96M176.67 74.99C179.17 74.89 181.67 73.58 184.17 71.23C186.67 68.88 189.17 65.49 191.67 61.5C194.17 57.51 196.67 52.92 199.17 48.31C201.67 43.7 204.17 39.08 206.67 35.04M222.67 21.01C225.17 21.11 227.67 22.42 230.17 24.77C232.67 27.12 235.17 30.51 237.67 34.5C240.17 38.49 242.67 43.08 245.17 47.69C247.67 52.3 250.17 56.92 252.67 60.96M268.67 74.99C271.11 74.89 273.56 73.64 276 71.38C278.44 69.13 280.89 65.88 283.33 62.03C285.78 58.18 288.22 53.73 290.67 49.23C293.11 44.73 295.56 40.18 298 36.13" fill="none" stroke="#000" stroke-width="18.5"/></mask><mask id="braid-cut1" maskUnits="userSpaceOnUse" x="0" y="0" width="320" height="96"><rect x="0" y="0" width="320" height="96" fill="#fff"/><path d="M22 32.94C23.78 35.66 25.56 38.71 27.33 41.91C29.11 45.1 30.89 48.43 32.67 51.68C34.44 54.92 36.22 58.09 38 60.96M54 74.99C56.5 74.89 59 73.58 61.5 71.23C64 68.88 66.5 65.49 69 61.5C71.5 57.51 74 52.92 76.5 48.31C79 43.7 81.5 39.08 84 35.04M100 21.01C102.5 21.11 105 22.42 107.5 24.77C110 27.12 112.5 30.51 115 34.5C117.5 38.49 120 43.08 122.5 47.69C125 52.3 127.5 56.92 130 60.96M146 74.99C148.5 74.89 151 73.58 153.5 71.23C156 68.88 158.5 65.49 161 61.5C163.5 57.51 166 52.92 168.5 48.31C171 43.7 173.5 39.08 176 35.04M192 21.01C194.5 21.11 197 22.42 199.5 24.77C202 27.12 204.5 30.51 207 34.5C209.5 38.49 212 43.08 214.5 47.69C217 52.3 219.5 56.92 222 60.96M238 74.99C240.5 74.89 243 73.58 245.5 71.23C248 68.88 250.5 65.49 253 61.5C255.5 57.51 258 52.92 260.5 48.31C263 43.7 265.5 39.08 268 35.04" fill="none" stroke="#000" stroke-width="18.5"/></mask><mask id="braid-cut2" maskUnits="userSpaceOnUse" x="0" y="0" width="320" height="96"><rect x="0" y="0" width="320" height="96" fill="#fff"/><path d="M23.33 74.99C25.83 74.89 28.33 73.58 30.83 71.23C33.33 68.88 35.83 65.49 38.33 61.5C40.83 57.51 43.33 52.92 45.83 48.31C48.33 43.7 50.83 39.08 53.33 35.04M69.33 21.01C71.83 21.11 74.33 22.42 76.83 24.77C79.33 27.12 81.83 30.51 84.33 34.5C86.83 38.49 89.33 43.08 91.83 47.69C94.33 52.3 96.83 56.92 99.33 60.96M115.33 74.99C117.83 74.89 120.33 73.58 122.83 71.23C125.33 68.88 127.83 65.49 130.33 61.5C132.83 57.51 135.33 52.92 137.83 48.31C140.33 43.7 142.83 39.08 145.33 35.04M161.33 21.01C163.83 21.11 166.33 22.42 168.83 24.77C171.33 27.12 173.83 30.51 176.33 34.5C178.83 38.49 181.33 43.08 183.83 47.69C186.33 52.3 188.83 56.92 191.33 60.96M207.33 74.99C209.83 74.89 212.33 73.58 214.83 71.23C217.33 68.88 219.83 65.49 222.33 61.5C224.83 57.51 227.33 52.92 229.83 48.31C232.33 43.7 234.83 39.08 237.33 35.04M253.33 21.01C255.83 21.11 258.33 22.42 260.83 24.77C263.33 27.12 265.83 30.51 268.33 34.5C270.83 38.49 273.33 43.08 275.83 47.69C278.33 52.3 280.83 56.92 283.33 60.96" fill="none" stroke="#000" stroke-width="18.5"/></mask></defs><g fill="none" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round"><path stroke="#c8a06a" mask="url(#braid-cut0)" d="M22 74.94C25.83 75.42 29.67 73 33.5 68.35C37.33 63.7 41.17 56.89 45 49.84C48.83 42.79 52.67 35.58 56.5 30.26C60.33 24.93 64.17 21.55 68 21.06C71.83 20.58 75.67 23 79.5 27.65C83.33 32.3 87.17 39.11 91 46.16C94.83 53.21 98.67 60.42 102.5 65.74C106.33 71.07 110.17 74.45 114 74.94C117.83 75.42 121.67 73 125.5 68.35C129.33 63.7 133.17 56.89 137 49.84C140.83 42.79 144.67 35.58 148.5 30.26C152.33 24.93 156.17 21.55 160 21.06C163.83 20.58 167.67 23 171.5 27.65C175.33 32.3 179.17 39.11 183 46.16C186.83 53.21 190.67 60.42 194.5 65.74C198.33 71.07 202.17 74.45 206 74.94C209.83 75.42 213.67 73 217.5 68.35C221.33 63.7 225.17 56.89 229 49.84C232.83 42.79 236.67 35.58 240.5 30.26C244.33 24.93 248.17 21.55 252 21.06C255.83 20.58 259.67 23 263.5 27.65C267.33 32.3 271.17 39.11 275 46.16C278.83 53.21 282.67 60.42 286.5 65.74C290.33 71.07 294.17 74.45 298 74.94"/><path stroke="#54dcc6" mask="url(#braid-cut1)" d="M22 36.13C25.83 29.78 29.67 24.75 33.5 22.46C37.33 20.17 41.17 20.64 45 23.75C48.83 26.86 52.67 32.56 56.5 39.25C60.33 45.94 64.17 53.52 68 59.87C71.83 66.22 75.67 71.25 79.5 73.54C83.33 75.83 87.17 75.36 91 72.25C94.83 69.14 98.67 63.44 102.5 56.75C106.33 50.06 110.17 42.48 114 36.13C117.83 29.78 121.67 24.75 125.5 22.46C129.33 20.17 133.17 20.64 137 23.75C140.83 26.86 144.67 32.56 148.5 39.25C152.33 45.94 156.17 53.52 160 59.87C163.83 66.22 167.67 71.25 171.5 73.54C175.33 75.83 179.17 75.36 183 72.25C186.83 69.14 190.67 63.44 194.5 56.75C198.33 50.06 202.17 42.48 206 36.13C209.83 29.78 213.67 24.75 217.5 22.46C221.33 20.17 225.17 20.64 229 23.75C232.83 26.86 236.67 32.56 240.5 39.25C244.33 45.94 248.17 53.52 252 59.87C255.83 66.22 259.67 71.25 263.5 73.54C267.33 75.83 271.17 75.36 275 72.25C278.83 69.14 282.67 63.44 286.5 56.75C290.33 50.06 294.17 42.48 298 36.13"/><path stroke="#8272ff" mask="url(#braid-cut2)" d="M22 32.94C25.83 38.8 29.67 46.26 33.5 53.19C37.33 60.13 41.17 66.46 45 70.41C48.83 74.35 52.67 75.86 56.5 74.5C60.33 73.14 64.17 68.93 68 63.06C71.83 57.2 75.67 49.74 79.5 42.81C83.33 35.87 87.17 29.54 91 25.59C94.83 21.65 98.67 20.14 102.5 21.5C106.33 22.86 110.17 27.07 114 32.94C117.83 38.8 121.67 46.26 125.5 53.19C129.33 60.13 133.17 66.46 137 70.41C140.83 74.35 144.67 75.86 148.5 74.5C152.33 73.14 156.17 68.93 160 63.06C163.83 57.2 167.67 49.74 171.5 42.81C175.33 35.87 179.17 29.54 183 25.59C186.83 21.65 190.67 20.14 194.5 21.5C198.33 22.86 202.17 27.07 206 32.94C209.83 38.8 213.67 46.26 217.5 53.19C221.33 60.13 225.17 66.46 229 70.41C232.83 74.35 236.67 75.86 240.5 74.5C244.33 73.14 248.17 68.93 252 63.06C255.83 57.2 259.67 49.74 263.5 42.81C267.33 35.87 271.17 29.54 275 25.59C278.83 21.65 282.67 20.14 286.5 21.5C290.33 22.86 294.17 27.07 298 32.94"/></g></svg>
+      </div>
+
+      <div class="tools">
+        <article class="tool" aria-labelledby="braid-title">
+          <span class="tag open"><span data-l="en">Open source · Apache-2.0</span><span data-l="es" lang="es">Código abierto · Apache-2.0</span></span>
+          <h3 id="braid-title">Braid</h3>
+          <p data-l="en">Version control, like git, for many AI agents changing the same project at once. Each agent works in its own space, and their changes land on main one after another, without git's reject-and-retry loop. Git stays at the edges, so GitHub keeps working.</p>
+          <p data-l="es" lang="es">Control de versiones, como git, para muchos agentes de IA que cambian el mismo proyecto a la vez. Cada agente trabaja en su propio espacio y sus cambios llegan a main uno tras otro, sin el bucle de rechazos y reintentos de git. Git se queda en los bordes, así que GitHub sigue funcionando.</p>
+          <p class="small" data-l="en">A command-line program in Rust that you build from source with cargo. Version 0.1: keep git as your source of truth.</p>
+          <p class="small" data-l="es" lang="es">Un programa de línea de comandos en Rust que se compila desde el código con cargo. Versión 0.1: mantén git como tu fuente de verdad.</p>
+          <div class="actions">
+            <a class="btn btn-ghost" href="https://braid.elffuss.com"><span data-l="en">Visit Braid</span><span data-l="es" lang="es">Ver Braid</span></a>
+            <a class="link ext" href="https://github.com/utopia-ia/elffuss-braid" rel="noopener" aria-label="Source code of Braid on GitHub" data-aria-en="Source code of Braid on GitHub" data-aria-es="Código fuente de Braid en GitHub"><span data-l="en">Source code</span><span data-l="es" lang="es">Código fuente</span></a>
+          </div>
+        </article>
+        <article class="tool" aria-labelledby="braidhub-title">
+          <span class="tag service"><span data-l="en">Hosted service · sign in with GitHub</span><span data-l="es" lang="es">Servicio alojado · entras con GitHub</span></span>
+          <h3 id="braidhub-title">BraidHub</h3>
+          <p data-l="en">The hosted hub where agents on different machines land their work on the same main. Repositories are private by default, and each can keep a GitHub mirror, so people who use git keep doing so. It also has issues, change requests and public repositories to explore.</p>
+          <p data-l="es" lang="es">El hub alojado donde agentes de distintas máquinas integran su trabajo en la misma rama main. Los repositorios son privados por defecto y cada uno puede tener un espejo en GitHub, así que quien usa git sigue con git. También tiene incidencias, solicitudes de cambio y repositorios públicos para explorar.</p>
+          <p class="small" data-l="en">We run it, and it stores your repositories. Its protocol is public in the Braid repository.</p>
+          <p class="small" data-l="es" lang="es">Lo operamos nosotros y guarda tus repositorios. Su protocolo es público en el repositorio de Braid.</p>
+          <div class="actions">
+            <a class="btn btn-ghost" href="https://braidhub.elffuss.com/"><span data-l="en">Visit BraidHub</span><span data-l="es" lang="es">Ver BraidHub</span></a>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="source" aria-labelledby="source-title">
+    <div class="wrap">
+      <span class="eyebrow"><span data-l="en">Source</span><span data-l="es" lang="es">Código</span></span>
+      <h2 id="source-title"><span data-l="en">What is open</span><span data-l="es" lang="es">Qué es abierto</span></h2>
+      <p class="intro" data-l="en">Everything Elffuss publishes is on GitHub under Apache-2.0. The repositories now live in the UtopiaIA organization.</p>
+      <p class="intro" data-l="es" lang="es">Todo lo que Elffuss publica está en GitHub con licencia Apache-2.0. Los repositorios están ahora en la organización UtopiaIA.</p>
+      <div class="source">
+        <ul class="repos" aria-label="Public repositories" data-aria-en="Public repositories" data-aria-es="Repositorios públicos">
+          <li><a href="https://github.com/utopia-ia/elffuss" rel="noopener"><span class="repo-name">elffuss</span><span class="lic">Apache-2.0</span><span class="repo-what"><span data-l="en">Core: the shared agent code behind the apps' assistants</span><span data-l="es" lang="es">Núcleo: el código de agente que comparten los asistentes de las apps</span></span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-engine" rel="noopener"><span class="repo-name">elffuss-engine</span><span class="lic">Apache-2.0</span><span class="repo-what"><span data-l="en">The engine's browser runtime. A public mirror, behind the live version</span><span data-l="es" lang="es">El motor para el navegador. Un espejo público, por detrás de la versión en producción</span></span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-claw" rel="noopener"><span class="repo-name">elffuss-claw</span><span class="lic">Apache-2.0</span><span class="repo-what">Claw</span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-copilot" rel="noopener"><span class="repo-name">elffuss-copilot</span><span class="lic">Apache-2.0</span><span class="repo-what"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-code" rel="noopener"><span class="repo-name">elffuss-code</span><span class="lic">Apache-2.0</span><span class="repo-what">Code</span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-translator" rel="noopener"><span class="repo-name">elffuss-translator</span><span class="lic">Apache-2.0</span><span class="repo-what"><span data-l="en">Translator. Behind the live app</span><span data-l="es" lang="es">Translator. Por detrás de la app en producción</span></span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-braid" rel="noopener"><span class="repo-name">elffuss-braid</span><span class="lic">Apache-2.0</span><span class="repo-what"><span data-l="en">Braid: the command-line program and the hub protocol</span><span data-l="es" lang="es">Braid: el programa de línea de comandos y el protocolo del hub</span></span></a></li>
+          <li><a href="https://github.com/utopia-ia/elffuss-claw-skills" rel="noopener"><span class="repo-name">elffuss-claw-skills</span><span class="lic">Apache-2.0</span><span class="repo-what"><span data-l="en">Skills for Claw</span><span data-l="es" lang="es">Skills para Claw</span></span></a></li>
+        </ul>
+        <div class="panel closed">
+          <h3><span class="dot" aria-hidden="true"></span><span data-l="en">Apache-2.0</span><span data-l="es" lang="es">Apache-2.0</span></h3>
+          <p data-l="en">All of Elffuss's published code is Apache-2.0.</p>
+          <p data-l="es" lang="es">Todo el código publicado de Elffuss es Apache-2.0.</p>
+          <a class="link ext" href="https://github.com/utopia-ia" rel="noopener"><span data-l="en">All repositories on GitHub</span><span data-l="es" lang="es">Todos los repositorios en GitHub</span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="diary" aria-labelledby="diary-title">
+    <div class="wrap">
+      <span class="eyebrow"><span data-l="en">Read</span><span data-l="es" lang="es">Leer</span></span>
+      <h2 id="diary-title"><span data-l="en">The diary and the notebook</span><span data-l="es" lang="es">El diario y la bitácora</span></h2>
+      <div class="reads">
+        <article class="read">
+          <h3><span data-l="en">Diary</span><span data-l="es" lang="es">Diario</span></h3>
+          <p data-l="en">Short illustrative stories, one a day for each app, about using AI in the browser. They are generated with a language model and written in Spanish.</p>
+          <p data-l="es" lang="es">Historias breves e ilustrativas, una al día por app, sobre usar IA en el navegador. Se generan con un modelo de lenguaje y están en español.</p>
+          <div class="actions"><a class="link" href="/blog/" hreflang="es"><span data-l="en">Read the diary</span><span data-l="es" lang="es">Leer el diario</span></a></div>
+        </article>
+        <article class="read">
+          <h3><span data-l="en">Notebook</span><span data-l="es" lang="es">Bitácora</span></h3>
+          <p data-l="en">The research notebook on how the stack was built, failures included. In English.</p>
+          <p data-l="es" lang="es">El cuaderno técnico sobre cómo se construyó todo, con los fallos incluidos. En inglés.</p>
+          <div class="actions"><a class="link ext" href="https://bitacora.utopiaia.com/#elffuss" hreflang="en" rel="noopener"><span data-l="en">Read the notebook</span><span data-l="es" lang="es">Leer la bitácora</span></a></div>
+        </article>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot-row">
+    <div class="foot-brand">
+      <a class="brand" href="/" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z" fill="#c8a06a"/><circle cx="20.5" cy="13.2" r="2.1" fill="#090a11"/></svg>Elffuss</a>
+      <p data-l="en">Free AI apps that run in your browser, on your own GPU.</p>
+      <p data-l="es" lang="es">Apps de IA gratuitas que corren en tu navegador, en tu propia GPU.</p>
+    </div>
+    <nav aria-label="More" data-aria-en="More" data-aria-es="Más">
+      <ul class="foot-links">
+        <li><a href="/">Chat</a></li>
+        <li><a href="https://claw.elffuss.com">Claw</a></li>
+        <li><a href="https://code.elffuss.com">Code</a></li>
+        <li><a href="https://translator.elffuss.com">Translator</a></li>
+        <li><a href="https://copilot.elffuss.com"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></a></li>
+        <li><a href="https://braid.elffuss.com">Braid</a></li>
+        <li><a href="https://braidhub.elffuss.com/">BraidHub</a></li>
+        <li><a href="/how-it-works/"><span data-l="en">How it works</span><span data-l="es" lang="es">Cómo funciona</span></a></li>
+        <li><a href="/blog/"><span data-l="en">Diary</span><span data-l="es" lang="es">Diario</span></a></li>
+        <li><a href="https://github.com/utopia-ia" rel="noopener">GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+  var KEY = 'elffuss-lang';
+  var root = document.documentElement;
+  var TITLE = {
+    en: 'All apps · Elffuss: AI that runs in your browser, on your own GPU',
+    es: 'Todas las apps · Elffuss: IA que corre en tu navegador, en tu propia GPU'
+  };
+  var lang = root.lang === 'es' ? 'es' : 'en';
+
+  function each(selector, fn) {
+    var list = document.querySelectorAll(selector);
+    for (var i = 0; i < list.length; i++) fn(list[i]);
+  }
+
+  function apply(value) {
+    lang = value;
+    root.lang = value;
+    document.title = TITLE[value];
+    each('[data-set-lang]', function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-lang') === value));
+    });
+    each('[data-aria-' + value + ']', function (el) {
+      el.setAttribute('aria-label', el.getAttribute('data-aria-' + value));
+    });
+    each('[data-alt-' + value + ']', function (el) {
+      el.setAttribute('alt', el.getAttribute('data-alt-' + value));
+    });
+    /* Posters that exist in both languages follow the page language. */
+    each('img[data-src-' + value + ']', function (el) {
+      var src = el.getAttribute('data-src-' + value);
+      if (el.getAttribute('src') !== src) el.setAttribute('src', src);
+    });
+  }
+
+  function remember(value) {
+    try { localStorage.setItem(KEY, value); } catch (e) {}
+    try {
+      var url = new URL(location.href);
+      if (url.searchParams.has('lang')) {
+        url.searchParams.set('lang', value);
+        history.replaceState(null, '', url.toString());
+      }
+    } catch (e) {}
+  }
+
+  /* Demo videos load only when asked for: the poster is replaced by a video with controls. */
+  function play(button) {
+    var figure = button.parentNode;
+    var img = figure.querySelector('img');
+    var name = button.getAttribute('data-aria-en').replace('Watch the demo: ', '');
+    var video = document.createElement('video');
+    video.setAttribute('preload', 'none');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('width', button.getAttribute('data-w'));
+    video.setAttribute('height', button.getAttribute('data-h'));
+    video.setAttribute('data-aria-en', 'Demo of ' + name);
+    video.setAttribute('data-aria-es', 'Demo de ' + name);
+    video.setAttribute('aria-label', (lang === 'es' ? 'Demo de ' : 'Demo of ') + name);
+    video.controls = true;
+    /* Only demos without a sound track start muted; one with speech keeps its sound, since the click allows it. */
+    video.muted = button.hasAttribute('data-muted');
+    video.playsInline = true;
+    if (img) video.poster = img.currentSrc || img.src;
+    video.src = button.getAttribute('data-src');
+    video.addEventListener('play', function () {
+      each('video', function (other) { if (other !== video && !other.paused) other.pause(); });
+    });
+    if (img) figure.replaceChild(video, img); else figure.appendChild(video);
+    figure.removeChild(button);
+    video.focus();
+    var started = video.play();
+    if (started && typeof started.catch === 'function') started.catch(function () {});
+  }
+
+  apply(lang);
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var toggle = target.closest('[data-set-lang]');
+    if (toggle) {
+      var value = toggle.getAttribute('data-set-lang') === 'es' ? 'es' : 'en';
+      apply(value);
+      remember(value);
+      return;
+    }
+    var button = target.closest('button.play');
+    if (button) play(button);
+  });
+})();
+</script>
+<script>
+/* Installed as an app (elffuss.com), a link to another Elffuss app opens outside this window: in a browser tab, or in
+   that app's own window when it is installed too, and not under the browser's bar with the address. */
+addEventListener('click', function (e) {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (!(matchMedia('(display-mode: standalone)').matches || navigator.standalone === true)) return;
+  var a = e.target.closest && e.target.closest('a[href]');
+  if (!a) return;
+  var u; try { u = new URL(a.href, location.href); } catch (x) { return; }
+  if (!/^https?:$/.test(u.protocol) || u.origin === location.origin) return;
+  e.preventDefault();
+  window.open(u.href, '_blank', 'noopener');
+});
+</script>
+<script type="module">import { mountNote } from '/chat/mirror.js'; mountNote(document.getElementById('main'));</script>
+</body>
+</html>

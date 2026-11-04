@@ -1,0 +1,264 @@
+{
+  "schema": "elffuss-home/chat-pin@1",
+  "note": "Written by chat-sync.sh. Every file is a byte copy of that repository at that commit (git show, never the working tree); ./chat-sync.sh --check verifies them. js/engine/ is not committed.",
+  "engine": {
+    "repo": "elffuss-engine",
+    "branch": "public-clean",
+    "commit": "ff1d3c4308d20a95584dd54e198b9dd028c0bf8c",
+    "engineCommit": "df6949e177ca9dd9fe5836d45f8822fbd96d20d7",
+    "dir": "js",
+    "files": [
+      {
+        "from": "js/device.js",
+        "to": "engine/device.js",
+        "sha256": "c2aad5e92fda27b0bcf9673fe2e47fe2b9a407afdc4c5632c2486b151eef279b"
+      },
+      {
+        "from": "js/gguf.js",
+        "to": "engine/gguf.js",
+        "sha256": "6606e1228e7167f49c50001664448492db7f4f29fd5bde7dfa0551e72b7b355d"
+      },
+      {
+        "from": "js/hadamard.js",
+        "to": "engine/hadamard.js",
+        "sha256": "4a5fa8b254ec8bfbee222dd542ee0968f836a4583a61207ae46965ed0f34db49"
+      },
+      {
+        "from": "js/kernels.attn.wgsl.js",
+        "to": "engine/kernels.attn.wgsl.js",
+        "sha256": "46f5ebbbcdba8ce464ecb186a925a5b59e4463718f4dcbfe2ba03dae63d2cbb2"
+      },
+      {
+        "from": "js/kernels.bloques.wgsl.js",
+        "to": "engine/kernels.bloques.wgsl.js",
+        "sha256": "7539d466a17e12ca3adadbae67c555f1a5df5a528f4095f8ab46c365c48d24e9"
+      },
+      {
+        "from": "js/kernels.drift.wgsl.js",
+        "to": "engine/kernels.drift.wgsl.js",
+        "sha256": "cf0a7e9263fdce2f357e7c9f496d0558396c74207b4fe2eec63df55bc305650c"
+      },
+      {
+        "from": "js/kernels.filas.wgsl.js",
+        "to": "engine/kernels.filas.wgsl.js",
+        "sha256": "14aabcaf6c8543c0ef599706fa191984b115495a42fa48eafc40db2a168f22f5"
+      },
+      {
+        "from": "js/kernels.flash.wgsl.js",
+        "to": "engine/kernels.flash.wgsl.js",
+        "sha256": "67df925de12116eb614141a062de2c59b44a9730d543b397194ffe67b2965463"
+      },
+      {
+        "from": "js/kernels.fusion.wgsl.js",
+        "to": "engine/kernels.fusion.wgsl.js",
+        "sha256": "56aeea6d7bbf0d2afc4d50b77fa2a1a29f541a1f48cf62b7328859e86bd6ec82"
+      },
+      {
+        "from": "js/kernels.gemm.wgsl.js",
+        "to": "engine/kernels.gemm.wgsl.js",
+        "sha256": "3defacf1f6f1c686a4ea73048bfab1c9f10e123744d42b348d959f7cb614a152"
+      },
+      {
+        "from": "js/kernels.gemm2.wgsl.js",
+        "to": "engine/kernels.gemm2.wgsl.js",
+        "sha256": "369b29a7ef8ca5558c60cd98df9e84a902d86696aede230ba8b4243fb9759b77"
+      },
+      {
+        "from": "js/kernels.gemv.wgsl.js",
+        "to": "engine/kernels.gemv.wgsl.js",
+        "sha256": "f14a5730109fb9ceab526ee0bde924c143475d1e28186640731cc7a3a9a78e56"
+      },
+      {
+        "from": "js/kernels.hadamard.wgsl.js",
+        "to": "engine/kernels.hadamard.wgsl.js",
+        "sha256": "8d87dd747927d12b3d952cbc663562c478885f40018f9348a4a35175161c1406"
+      },
+      {
+        "from": "js/kernels.model.wgsl.js",
+        "to": "engine/kernels.model.wgsl.js",
+        "sha256": "62cbc75f9e352facc3e6e59f07da82131e664d003cb8d83635b15a4b785ec7ca"
+      },
+      {
+        "from": "js/kernels.nn.wgsl.js",
+        "to": "engine/kernels.nn.wgsl.js",
+        "sha256": "20c88aca0db0cab7870cd2ff2cb146320ec117d4a7f4971d867cabc84e5fa646"
+      },
+      {
+        "from": "js/kernels.ssm.wgsl.js",
+        "to": "engine/kernels.ssm.wgsl.js",
+        "sha256": "38c64a5a5c710ea570ea7ce90c6eda180f402382486b2a85355c081cc757a584"
+      },
+      {
+        "from": "js/kernels.topk.wgsl.js",
+        "to": "engine/kernels.topk.wgsl.js",
+        "sha256": "07446894ffbe6e6f4b53c4034ba91f2323d048e6cabfbe63083b3252b403dba6"
+      },
+      {
+        "from": "js/kernels.wgsl.js",
+        "to": "engine/kernels.wgsl.js",
+        "sha256": "e271619d37e51e4d9cdb9718eaf29610b425f75537509468c4753f50469bcb49"
+      },
+      {
+        "from": "js/memory-cards.js",
+        "to": "engine/memory-cards.js",
+        "sha256": "7e6fc994a7d6878a82921f6eaf143bc5c714f2c08585576efbecd38a76294614"
+      },
+      {
+        "from": "js/memory-config.js",
+        "to": "engine/memory-config.js",
+        "sha256": "42b4faeea0eb2455a9df7266af26a193721d9d27b71450f542bcd20e59317ad9"
+      },
+      {
+        "from": "js/memory-core.js",
+        "to": "engine/memory-core.js",
+        "sha256": "b8f32393bf5e5e1e266251eaea8c7613b8d285bd7184cfa0d3028a6bb2092637"
+      },
+      {
+        "from": "js/memory-rank.js",
+        "to": "engine/memory-rank.js",
+        "sha256": "aa6f56141b3e2d5e3e21d9fb085ee3e8d74f6277ded69782d94c4a5cde9ede7e"
+      },
+      {
+        "from": "js/memory-store.js",
+        "to": "engine/memory-store.js",
+        "sha256": "f64667ce1b83aa2efc7f36751552e3203a70763b4c5c91aa8d41843f4dc3d636"
+      },
+      {
+        "from": "js/memory-text.js",
+        "to": "engine/memory-text.js",
+        "sha256": "3ebdbad20dbad39138d70303f5bc4b110cb428d5aab1536d5ec0d95ab0f9ed71"
+      },
+      {
+        "from": "js/memory-tuning.js",
+        "to": "engine/memory-tuning.js",
+        "sha256": "383b62c74aee2b33a379b5d98ffa9c13c4c6b30cb14e55e292e115c38b6d0989"
+      },
+      {
+        "from": "js/memory-ui.js",
+        "to": "engine/memory-ui.js",
+        "sha256": "6301385cfa42d92719577cddc45d16ee732d85d7a8cd3afb7c9fc8d50d4f07d8"
+      },
+      {
+        "from": "js/memory.js",
+        "to": "engine/memory.js",
+        "sha256": "1ecc23e0e32df7f1ff24f5c87024a24d906d3a75a010e054661c866d531b1558"
+      },
+      {
+        "from": "js/model.js",
+        "to": "engine/model.js",
+        "sha256": "14a0ea46d305e187e1673ef286a9a38d993a17e8f358044386dfeb7fcf2672d5"
+      },
+      {
+        "from": "js/ops.flash.js",
+        "to": "engine/ops.flash.js",
+        "sha256": "0a2274377a1a7eeb28a0eb8078ea629a7356e7f03856f0f80a5ae2e6fa2bbc52"
+      },
+      {
+        "from": "js/ops.fusion.js",
+        "to": "engine/ops.fusion.js",
+        "sha256": "c24c0e6cbe988b8b6f3931a798fe71b8042fce5b17bc4fb2fe4dd2717f935dc9"
+      },
+      {
+        "from": "js/ops.gemm2.js",
+        "to": "engine/ops.gemm2.js",
+        "sha256": "d2e331fac7d7003b1d5ff49ee95a8cabe999e1e97871aca55f428a99efa860be"
+      },
+      {
+        "from": "js/ops.gemv.js",
+        "to": "engine/ops.gemv.js",
+        "sha256": "2de24375b5a7624b2ee463283e85cd61bb3db49309d72e70d4123245bc218480"
+      },
+      {
+        "from": "js/ops.js",
+        "to": "engine/ops.js",
+        "sha256": "ab79eb7b04eb396ae10ae01b3db1adb085d7a82045c9f83b8cffda469974e1be"
+      },
+      {
+        "from": "js/ops.topk.js",
+        "to": "engine/ops.topk.js",
+        "sha256": "2679b48ab710ea9089814c38c675c3376941c1a67f55a5b80ce00b2fbb559815"
+      },
+      {
+        "from": "js/provider.js",
+        "to": "engine/provider.js",
+        "sha256": "ed4ae80bbf55cf2471be0a34d56a161b62b317af61ec5026e2cc6d59c7d27dd5"
+      },
+      {
+        "from": "js/quant-tables.js",
+        "to": "engine/quant-tables.js",
+        "sha256": "5f27228b8700cfc2202e14c049cab168c7af97d9f0af9c0dedee94f333488fe5"
+      },
+      {
+        "from": "js/registro.js",
+        "to": "engine/registro.js",
+        "sha256": "0d3107db69d99cdc9fd2bc49de8c458096b29a2ff6379ec816a6c8e33d3b8e98"
+      },
+      {
+        "from": "js/repack.js",
+        "to": "engine/repack.js",
+        "sha256": "e63b3bacba60ed4af1c4aee19fb74108731c0c432118e454b96a2919b21cc83b"
+      },
+      {
+        "from": "js/sample.js",
+        "to": "engine/sample.js",
+        "sha256": "91bb7d322bf4dd5b67a588b0f7d3fc973d8e671f1b85002cde6083e95d6adf3e"
+      },
+      {
+        "from": "js/state.js",
+        "to": "engine/state.js",
+        "sha256": "168fbdeba5d4f851f3b0573cc3f2ec5348c511cb2108894029d1350da218c9ba"
+      },
+      {
+        "from": "js/tokenizer.js",
+        "to": "engine/tokenizer.js",
+        "sha256": "76d6c934ec7e5db51c32c917e2ac000d105a1e71bcc464f6ca5ba27f20710b41"
+      },
+      {
+        "from": "js/topk.js",
+        "to": "engine/topk.js",
+        "sha256": "8b7f0263c8c5e6997a7056b23afc757367c6d9b9e22d18eef759908472a188f4"
+      },
+      {
+        "from": "js/tuning.js",
+        "to": "engine/tuning.js",
+        "sha256": "3f721037d434dbc0e474706dcdf513aa69325a25be5d5ef3d40d3c6d2d19cad0"
+      }
+    ]
+  },
+  "claw": {
+    "repo": "elffuss-claw",
+    "commit": "8c6fe4370e528c648c8f13a8d3cfa0ee9b48126b",
+    "files": [
+      {
+        "from": "web/js/runtime/model-store.js",
+        "to": "runtime/model-store.js",
+        "sha256": "adf60dbea55b5c6bdefc6b630f1a44bbcb7bec7fc0e490955b7ff7b595f2cde1"
+      },
+      {
+        "from": "web/js/runtime/model-broker.js",
+        "to": "runtime/model-broker.js",
+        "sha256": "dfae497bbc6dc356bf47e588ace61fc2224039755855460f4c791028a5f6b441"
+      },
+      {
+        "from": "web/js/runtime/opfs-worker.js",
+        "to": "runtime/opfs-worker.js",
+        "sha256": "28f46e22248c57f4a10cd70d6742911e4a3acc7c9263f79f1665a489642bfda2"
+      },
+      {
+        "from": "web/js/context.js",
+        "to": "context.js",
+        "sha256": "d48e9962d1872f0139a08d4f9715f729510b0e057d5ed21b450a312466f38bda"
+      },
+      {
+        "from": "web/js/acer-core.js",
+        "to": "acer-core.js",
+        "sha256": "18112aaa9f9d7c66b18919919cecdd8605849d6280e74254843d9e7e22885325"
+      },
+      {
+        "from": "web/memory/memory.config.js",
+        "to": "../memory/memory.config.js",
+        "sha256": "ff78c8f05ecf4e34c3e4fc51860dd28307c3f912a7cfec32aa908ed88d5189b4"
+      }
+    ]
+  }
+}
