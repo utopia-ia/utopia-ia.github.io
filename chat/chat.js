@@ -1582,6 +1582,13 @@ function noteMemoryDown(li, mine) {
 
 
 // ---------- Sidebar drawer and apps sheet ----------
+// On a computer the menu can be hidden (remembered in this browser); on a phone it is the drawer below.
+const SIDE_KEY = 'elffuss.side.hidden';
+let sideHidden = (() => { try { return localStorage.getItem(SIDE_KEY) === '1'; } catch { return false; } })();
+const wide = () => matchMedia('(min-width: 900px)').matches;
+function keepSide() { try { localStorage.setItem(SIDE_KEY, sideHidden ? '1' : '0'); } catch { /* private mode */ } }
+function setSide(hidden) { $('app')?.classList.toggle('side-collapsed', !!hidden); }
+setSide(sideHidden);
 let opener = null;
 function openSide(btn) {
   opener = btn;
@@ -1617,6 +1624,7 @@ function applyLang(value) {
   for (const b of document.querySelectorAll('[data-set-lang]')) b.setAttribute('aria-pressed', String(b.dataset.setLang === value));
   for (const el of document.querySelectorAll(`[data-aria-${value}]`)) el.setAttribute('aria-label', el.getAttribute(`data-aria-${value}`));
   for (const el of document.querySelectorAll(`[data-ph-${value}]`)) el.setAttribute('placeholder', el.getAttribute(`data-ph-${value}`));
+  for (const el of document.querySelectorAll(`[data-title-${value}]`)) el.setAttribute('title', el.getAttribute(`data-title-${value}`));
   for (const fn of repaints) fn();
   for (const li of ui.thread.querySelectorAll('.msg-bot')) {
     const s = li.querySelector('.stamp'); if (s) s.textContent = t('stopped');
@@ -1656,7 +1664,14 @@ function wire() {
   });
   ui.stop.addEventListener('click', stopTurn);
   for (const b of document.querySelectorAll('[data-new-chat]')) b.addEventListener('click', () => { startNew(); closeSide(); });
-  document.querySelector('[data-open-side]')?.addEventListener('click', (e) => openSide(e.currentTarget));
+  document.querySelector('[data-open-side]')?.addEventListener('click', (e) => {
+    if (wide() && $('app').classList.contains('side-collapsed')) { sideHidden = false; keepSide(); setSide(false); return; }
+    openSide(e.currentTarget);
+  });
+  document.querySelector('[data-collapse-side]')?.addEventListener('click', () => {
+    sideHidden = true; keepSide(); setSide(true);
+    document.querySelector('[data-open-side]')?.focus({ preventScroll: true });
+  });
   for (const b of document.querySelectorAll('[data-close-side]')) b.addEventListener('click', closeSide);
   ui.scrim.addEventListener('click', closeSide);
   document.querySelector('[data-open-apps]')?.addEventListener('click', () => {
@@ -1700,6 +1715,7 @@ async function boot() {
   wire();
   // The app open inside the page is marked in the sidebar, like the open chat.
   appview.start({ onChange: (key) => {
+    if (wide()) setSide(key ? true : sideHidden);
     for (const l of document.querySelectorAll('.app-link')) {
       let host = ''; try { host = new URL(l.href).host; } catch { /* — */ }
       if (key && host.startsWith(key + '.')) l.setAttribute('aria-current', 'page'); else l.removeAttribute('aria-current');

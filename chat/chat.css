@@ -363,6 +363,14 @@ body { overflow: hidden; background: var(--ef-wall); }
 .sheet .app-list { display: grid; gap: 2px; }
 
 .only-narrow { display: none !important; }
+/* The menu can be hidden on a computer: the chat (or the app open inside the page) gets the whole width, and the
+   chats button of the top bar brings it back. Opening an app inside the page hides it too, until «Chat». */
+@media (min-width: 900px) {
+  .app.side-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .app.side-collapsed .side { display: none; }
+  .app.side-collapsed .icon-btn[data-open-side] { display: inline-grid !important; }
+}
+@media (max-width: 899px) { .only-wide { display: none !important; } }
 
 /* ---------- Narrow: the sidebar becomes a drawer, the apps a sheet ---------- */
 @media (max-width: 899px) {
