@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "4c6dd7a5e5bc8f521d92d1fa248d43a72e194a75",
-    "engineCommit": "80fc47ba21e95201772222e7fa2deb31648ba0f3",
+    "commit": "fc4fb92c9bc6da4e0de7b363b1c514a477eb19e9",
+    "engineCommit": "ede31f5225b628fba765983f233941a2c8993602",
     "dir": "js",
     "files": [
       {
@@ -171,7 +171,7 @@
       {
         "from": "js/ops.js",
         "to": "engine/ops.js",
-        "sha256": "ab79eb7b04eb396ae10ae01b3db1adb085d7a82045c9f83b8cffda469974e1be"
+        "sha256": "291c79c30fd1446d934c0a88cc1726644848abcf6ae5fc74884371087069e090"
       },
       {
         "from": "js/ops.topk.js",
