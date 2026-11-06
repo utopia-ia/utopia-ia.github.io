@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "ff1d3c4308d20a95584dd54e198b9dd028c0bf8c",
-    "engineCommit": "df6949e177ca9dd9fe5836d45f8822fbd96d20d7",
+    "commit": "4c6dd7a5e5bc8f521d92d1fa248d43a72e194a75",
+    "engineCommit": "80fc47ba21e95201772222e7fa2deb31648ba0f3",
     "dir": "js",
     "files": [
       {
@@ -66,7 +66,7 @@
       {
         "from": "js/kernels.gemv.wgsl.js",
         "to": "engine/kernels.gemv.wgsl.js",
-        "sha256": "f14a5730109fb9ceab526ee0bde924c143475d1e28186640731cc7a3a9a78e56"
+        "sha256": "9433f78a449de0fbbbd812131583a173b00e653178eabd66968951bedaab468f"
       },
       {
         "from": "js/kernels.hadamard.wgsl.js",
@@ -166,7 +166,7 @@
       {
         "from": "js/ops.gemv.js",
         "to": "engine/ops.gemv.js",
-        "sha256": "2de24375b5a7624b2ee463283e85cd61bb3db49309d72e70d4123245bc218480"
+        "sha256": "5a1b81e8708e72c5ad4befe800b25341cf9593c575df7c778afca91b82e336d2"
       },
       {
         "from": "js/ops.js",
@@ -191,7 +191,7 @@
       {
         "from": "js/registro.js",
         "to": "engine/registro.js",
-        "sha256": "0d3107db69d99cdc9fd2bc49de8c458096b29a2ff6379ec816a6c8e33d3b8e98"
+        "sha256": "30e3a66f1b2d8ae133de16b5544537d4598e0c1b31386b21ef7c86b00f396979"
       },
       {
         "from": "js/repack.js",

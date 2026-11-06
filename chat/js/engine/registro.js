@@ -64,7 +64,11 @@ export const MODELS = {
     razona: true,
     presupuesto: 4000,
     muestreo: { temperature: 0.1, topP: 1, topK: 50, minP: 0, presence: 0, repeatPenalty: 1.1 },
-    lote: 512,
+    // Lote 64 y no 512: en el teléfono lo que el motor pide a la tarjeta cuenta en
+    // el límite de memoria de la pestaña, y con pesos y KV ya cargados, el primer
+    // prompt de un chat leído de 512 en 512 lo pasaba: el navegador mataba la
+    // pestaña y la recargaba en bucle. Medido en un teléfono: 512 muere, 64 contesta.
+    lote: 64,
     licencia: 'https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/blob/bad5729bba61d076fff20d2548e62526665af215/LICENSE',
   },
 
