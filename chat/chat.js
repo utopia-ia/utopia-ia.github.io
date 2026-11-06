@@ -880,6 +880,9 @@ async function runTool(call, ctx) {
     case 'app.create': {
       let name = cleanName(a.name);
       const html = typeof a.html === 'string' ? a.html : '';
+      // A small model often leaves the name out when it rewrites the app open in the panel: that is the one it means.
+      // With no app open, the page's <title> names it.
+      if (!name && html.trim()) name = panel.openName() || cleanName(/<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1]);
       if (!name || !html.trim()) return fail(es ? 'Falta name o html' : 'Missing name or html');
       // A model that rewrites the open app as an HTML block may change its <title>, and so its name. If an app is
       // open and the user asked for a change (and not for a new app), the new version replaces the open one.
@@ -909,6 +912,17 @@ async function runTool(call, ctx) {
     }
     case 'app.open': {
       const name = cleanName(a.name);
+      // No name while an app is open ("fix it", "what does it do"): the model wants that app. It reads its HTML and how
+      // to save a new version, and the turn goes on, instead of an error the visitor cannot act on.
+      if (!name && panel.openName()) {
+        const open = panel.openName();
+        const err = panel.lastError();
+        const text = es
+          ? `La app «${open}» está abierta en el panel${err ? ` y da este error: ${err}` : ''}. Su HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nPara cambiarla o arreglarla, llama a app.create con name «${open}» y el HTML completo nuevo.`
+          : `The app “${open}” is open in the panel${err ? ` and shows this error: ${err}` : ''}. Its HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nTo change or fix it, call app.create with name “${open}” and the whole new HTML.`;
+        ctx.summary.name = open;
+        return { text, result: { name: open, saved: true } };
+      }
       if (!name) return fail(es ? 'Falta name' : 'Missing name');
       try {
         const app = await bridge.call('apps.get', { name });
