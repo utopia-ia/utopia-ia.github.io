@@ -41,6 +41,7 @@ let words = (k) => k;
 let changed = () => {};
 
 export const openName = () => current?.name || null;
+export const openHtml = () => current?.html || null;
 export const isOpen = () => !!current;
 
 export function init({ t, onChange, onFix }) {
