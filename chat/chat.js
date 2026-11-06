@@ -78,7 +78,7 @@ const T = {
       cached
         ? ['The model was already in this browser.', '0 bytes from the network. It only has to go from disk to the graphics card.']
         : ['You are downloading the whole model.', `${label}, ${size}. Only this once: on your next visit it is read from this browser, with 0 bytes from the network.`],
-      ['On an engine we wrote ourselves.', 'Elffuss Engine writes up to 1.8 times faster than ONNX Runtime Web, with the same model in the same browser.'],
+      ['On an engine we wrote ourselves.', 'Elffuss Engine writes up to 1.8 times faster than other engines, with the same model in the same browser.'],
       ['No account, no key, no bill per message.', 'There is nobody in the middle to charge you for it.'],
       ['Tested before every release.', 'Every version of the engine passes more than 200 tests, 86 of them checked against llama.cpp.'],
     ],
@@ -187,7 +187,7 @@ const T = {
       cached
         ? ['El modelo ya estaba en este navegador.', '0 bytes de red. Solo tiene que pasar del disco a la tarjeta gráfica.']
         : ['Estás bajando el modelo entero.', `${label}, ${size}. Solo esta vez: en la próxima visita se lee de este navegador, con 0 bytes de red.`],
-      ['Con un motor hecho por nosotros.', 'Elffuss Engine escribe hasta 1,8 veces más rápido que ONNX Runtime Web, con el mismo modelo y en el mismo navegador.'],
+      ['Con un motor hecho por nosotros.', 'Elffuss Engine escribe hasta 1,8 veces más rápido que otros motores, con el mismo modelo y en el mismo navegador.'],
       ['Sin cuenta, sin clave y sin pagar por mensaje.', 'No hay nadie en medio que te lo cobre.'],
       ['Probado antes de cada versión.', 'Cada versión del motor pasa más de 200 pruebas, 86 de ellas comparadas con llama.cpp.'],
     ],
