@@ -322,6 +322,11 @@ if (mirror) {
   }
   try { sessionStorage.setItem('elffuss.broker.down', '1'); } catch { /* the store then fails on its own */ }
 }
+// The phone's model reads the prompt in batches of 64 tokens, not the registry's 512. On an iPhone a tab may use
+// 2 GB and what the engine asks of the graphics card counts in it: with the weights and the cache on the card the tab
+// already sits near 1.7 GB, and the first prompt of a chat (about a thousand tokens) read 512 at a time pushed it past
+// the limit, so Safari killed the tab and reloaded it, again and again. Measured on an iPhone: 512 is killed, 64 answers.
+if (MODELS['lfm3-1.7b-q4']) MODELS['lfm3-1.7b-q4'].lote = 64;
 const model = () => (device.id ? MODELS[device.id] : null);
 const modelUrl = () => { const m = model(); return m && !Array.isArray(m.url) ? m.url : null; };
 
@@ -1506,7 +1511,12 @@ async function runTurn(li, mine, ctl, reason) {
           await store.put(mine);
         }
       }
-      if (msg.note === 'cut' && chat === mine) {
+      // Reasoning used the whole budget and left no answer: answer again at once without the reasoning step, once,
+      // instead of waiting for the visitor to find the button. Seen with app requests, where the small model plans the
+      // whole page in its reasoning and runs out before writing it.
+      if (msg.note === 'cut' && chat === mine && reason !== false && !msg.stopped) {
+        setTimeout(() => retryWithoutReasoning(li, mine, msg), 0);
+      } else if (msg.note === 'cut' && chat === mine) {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'mini-btn'; b.dataset.noReason = '';
         const label = () => { b.textContent = t('noReason'); };
