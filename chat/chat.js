@@ -322,11 +322,6 @@ if (mirror) {
   }
   try { sessionStorage.setItem('elffuss.broker.down', '1'); } catch { /* the store then fails on its own */ }
 }
-// The phone's model reads the prompt in batches of 64 tokens, not the registry's 512. On an iPhone a tab may use
-// 2 GB and what the engine asks of the graphics card counts in it: with the weights and the cache on the card the tab
-// already sits near 1.7 GB, and the first prompt of a chat (about a thousand tokens) read 512 at a time pushed it past
-// the limit, so Safari killed the tab and reloaded it, again and again. Measured on an iPhone: 512 is killed, 64 answers.
-if (MODELS['lfm3-1.7b-q4']) MODELS['lfm3-1.7b-q4'].lote = 64;
 // An answer without reasoning may run to 3,000 tokens, not the registry's 512: a small app is one whole HTML document,
 // and at 512 it came out cut in the middle of its form (measured on a phone, with a health-record app).
 for (const id of ['lfm3-1.7b', 'lfm3-1.7b-q4']) if (MODELS[id]) MODELS[id].tope = Math.max(MODELS[id].tope || 0, 3000);

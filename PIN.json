@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "8cd7251459016cc0f6a999c2aed2794c12474c88",
-    "engineCommit": "2b7021f263471077def074e6672498d85910f473",
+    "commit": "7e69a923b221d09bfe0a1a704ac1912edaaf0580",
+    "engineCommit": "5f64cba7d3d1709b6fe3b12ffe2b0e0de116120a",
     "dir": "js",
     "files": [
       {
@@ -191,7 +191,7 @@
       {
         "from": "js/registro.js",
         "to": "engine/registro.js",
-        "sha256": "30e3a66f1b2d8ae133de16b5544537d4598e0c1b31386b21ef7c86b00f396979"
+        "sha256": "ece802b4db63e7b8cf1a7439351f0718a698b285e5c9e218890bf8517d15ace5"
       },
       {
         "from": "js/repack.js",
