@@ -47,6 +47,7 @@ import { parseGGUF } from './gguf.js';
 // El registro va aparte para que la app pueda sondear disponibilidad sin
 // importarse el motor entero. Ver la cabecera de registro.js.
 import { MODELS, cachea } from './registro.js';
+import { creaSesionCpuRemota } from './cpu-proxy.js';
 
 export let name = 'Elffuss Engine · WebGPU';
 
@@ -126,6 +127,9 @@ async function tomarCerrojo(etiqueta) {
   return resultado;
 }
 let modelo = null, sesion = null, tk = null, gpu = null, muestreo = null;
+let modoCpu = false;           // el modelo corre en la CPU (sin WebGPU utilizable)
+// Contexto máximo en la CPU: su caché va en f32 en la misma pestaña que los pesos.
+const CTX_CPU = 4096;
 // ¿Este modelo espera un bloque de razonamiento en el prompt? Se DEDUCE de la
 // plantilla que trae el propio fichero, no se cablea por nombre de modelo: así
 // un GGUF sin razonamiento no recibe un bloque que no entiende, y uno nuevo que
@@ -567,9 +571,22 @@ export async function load(onProgress = () => {}) {
   cargando = (async () => {
     const m = modeloActivo();
     try {
-      onProgress('Encendiendo la GPU…');
       perdida = '';
-      gpu = await requestDevice({ label: 'elffuss-engine' });
+      // ── TARJETA O CPU ────────────────────────────────────────────────────
+      // Sin WebGPU utilizable (no hay `navigator.gpu`, ni adaptador, ni f16) el
+      // modelo corre en la CPU (cpu.js, en un Worker) con la misma plantilla,
+      // tokenizador, muestreo y prefijo. `__ELFFUSS_CPU = true` la fuerza;
+      // `= false` la prohíbe y deja el error de la tarjeta como estaba.
+      modoCpu = globalThis.__ELFFUSS_CPU === true;
+      if (!modoCpu) {
+        onProgress('Encendiendo la GPU…');
+        try { gpu = await requestDevice({ label: 'elffuss-engine' }); }
+        catch (e) {
+          if (globalThis.__ELFFUSS_CPU === false || typeof Worker === 'undefined') throw e;
+          console.warn('[engine] sin WebGPU utilizable, el modelo va en la CPU:', e?.message || e);
+          modoCpu = true; gpu = null;
+        }
+      }
 
       // El device se comprueba al nacer, pero también se puede morir DESPUÉS: el
       // proceso gráfico del navegador se reinicia y se lleva por delante los
@@ -577,7 +594,7 @@ export async function load(onProgress = () => {}) {
       // lo siguiente que ocurre es un forward que devuelve ceros o una promesa
       // que no vuelve nunca: un cuelgue sin causa visible. Aquí se entera, y así
       // el siguiente turno puede decir qué pasó en vez de quedarse mudo.
-      gpu.device.lost.then(info => {
+      if (gpu) gpu.device.lost.then(info => {
         // El estado se anula SIEMPRE, tanto si el dispositivo se cayó solo como si
         // lo tiramos nosotros. Antes la rama 'destroyed' salía sin registrar nada y
         // —lo grave— sin anular `sesion` ni `modelo`: la app se quedaba creyendo
@@ -660,6 +677,27 @@ export async function load(onProgress = () => {}) {
       // subirlos según llegan, y el tiempo se lo lleva casi todo la red. Decir
       // solo «subiendo» mientras alguien espera a que baje el modelo entero
       // hace que parezca colgado en el paso equivocado.
+      if (modoCpu) {
+        // En la CPU los pesos van a la memoria del Worker. Contexto como mucho
+        // CTX_CPU: la caché va en f32 dentro de la misma pestaña que los pesos.
+        let ultimoCpu = -1;
+        const ctxCpu = Math.min(m.ctx || CTX_CPU, CTX_CPU);
+        sesion = await creaSesionCpuRemota(ranged, {
+          contextLen: ctxCpu,
+          onProgress: (h, t) => {
+            const pct = Math.floor(h / t * 100);
+            if (pct === ultimoCpu) return;
+            ultimoCpu = pct;
+            onProgress(`Cargando el modelo en la CPU · ${pct} %`);
+          },
+        });
+        modelo = { cpu: true };
+        ctxEfectivo = ctxCpu;
+        name = 'Elffuss Engine · ' + m.label + ' · CPU';
+        console.log(`[engine] ${m.label} listo desde ${donde} · ${sesion.state.summary()}`);
+        onProgress('Modelo listo · 100 %');
+        return;
+      }
       const etiqueta = donde.startsWith('red')
         ? 'Descargando el modelo y subiéndolo a la GPU'
         : 'Subiendo el modelo a la GPU';
@@ -1605,7 +1643,8 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
       if (senal.aborted) throw errorParado();
     }
     if (id === undefined) {
-      const todos = new Float32Array(await readback(gpu.device, logits, 0, logitsTokens * vocab * 4));
+      const todos = logits instanceof Float32Array ? logits
+        : new Float32Array(await readback(gpu.device, logits, 0, logitsTokens * vocab * 4));
       if (senal.aborted) throw errorParado();
       const ultimo = todos.subarray((logitsTokens - 1) * vocab, logitsTokens * vocab);
       const tS = ahora(); msReadback += tS - tR;

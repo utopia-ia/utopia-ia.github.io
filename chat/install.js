@@ -22,6 +22,7 @@ const T = {
   en: {
     title: 'Install Elffuss as an app',
     why: 'The browser keeps the model saved instead of clearing it after a few days without use, and the chat opens in its own window.',
+    whyApart: 'The app keeps the model in its own storage, apart from the browser, and never clears it after days without use. Install it before the first answer: the model then downloads once, inside the app.',
     install: 'Install',
     ios: 'Tap Share, then «Add to Home Screen».',
     mac: 'In the File menu, choose «Add to Dock».',
@@ -31,6 +32,7 @@ const T = {
   es: {
     title: 'Instala Elffuss como app',
     why: 'El navegador guarda el modelo en vez de borrarlo tras unos días sin usarlo, y el chat se abre en su propia ventana.',
+    whyApart: 'La app guarda el modelo en su propio almacén, aparte del navegador, y no lo borra aunque pasen días sin usarla. Instálala antes de la primera respuesta: así el modelo se descarga una sola vez, ya dentro de la app.',
     install: 'Instalar',
     ios: 'Pulsa Compartir y luego «Añadir a pantalla de inicio».',
     mac: 'En el menú Archivo, elige «Añadir al Dock».',
@@ -53,7 +55,9 @@ function show() {
     box.setAttribute('aria-label', w.title);
     box.innerHTML = '';
     const h = document.createElement('p'); h.className = 'install-title'; h.textContent = w.title;
-    const p = document.createElement('p'); p.className = 'install-why'; p.textContent = w.why;
+    // On iPhone, iPad and Safari on a Mac the installed app does not see the browser's storage: a model downloaded in
+    // the tab would download again inside the app. There the box says so, so it can be installed first.
+    const p = document.createElement('p'); p.className = 'install-why'; p.textContent = iOS() || macSafari() ? w.whyApart : w.why;
     const row = document.createElement('div'); row.className = 'install-row';
     if (deferred) {
       const ok = document.createElement('button'); ok.type = 'button'; ok.className = 'btn'; ok.textContent = w.install;

@@ -67,6 +67,7 @@ const T = {
     downloadingPct: (p) => `Downloading the model · ${p} %`,
     gpu: (p) => `Loading the model onto the graphics card · ${p} %`,
     gpuNet: (p) => `Loading the model onto the graphics card · ${p} % · read from the network, not saved`,
+    cpu: (p) => `Loading the model into the processor · ${p} %`,
     lbNotSaved: 'Not saved',
     notSaved: 'This browser could not save the model, so your next visit will download it again.',
     notSavedSpace: (free) => `This browser could not save the model, so your next visit will download it again. Usually the disk is almost full${free ? ` (the browser has ${free} left)` : ''}: free some space, or install Elffuss as an app, which gives it room that is not cleared.`,
@@ -92,6 +93,7 @@ const T = {
     fineCached: (label) => `${label} is already in this browser: 0 bytes to download. It runs on this device, and chats are kept in this browser only.`,
     fineReady: (label) => `${label} is loaded and runs on this device. Chats are kept in this browser only.`,
     fineMissing: (label, size) => `The first answer needs a one-time download of ${label}, ${size}. It runs on this device, and chats are kept in this browser only.`,
+    fineCpu: 'This browser has no usable WebGPU, so the model runs on the processor: slower than on a graphics card.',
     thinking: 'Thinking…',
     reasoning: 'Reasoning',
     stopped: 'Stopped',
@@ -176,6 +178,7 @@ const T = {
     downloadingPct: (p) => `Descargando el modelo · ${p} %`,
     gpu: (p) => `Cargando el modelo en la tarjeta gráfica · ${p} %`,
     gpuNet: (p) => `Cargando el modelo en la tarjeta gráfica · ${p} % · leído de la red, sin guardar`,
+    cpu: (p) => `Cargando el modelo en el procesador · ${p} %`,
     lbNotSaved: 'Sin guardar',
     notSaved: 'Este navegador no ha podido guardar el modelo, así que en la próxima visita se volverá a descargar.',
     notSavedSpace: (free) => `Este navegador no ha podido guardar el modelo, así que en la próxima visita se volverá a descargar. Suele ser el disco casi lleno${free ? ` (al navegador le quedan ${free})` : ''}: libera espacio, o instala Elffuss como app, que le da un sitio que no se borra.`,
@@ -201,6 +204,7 @@ const T = {
     fineCached: (label) => `${label} ya está en este navegador: 0 bytes que descargar. Corre en este dispositivo y las conversaciones se guardan solo en este navegador.`,
     fineReady: (label) => `${label} está cargado y corre en este dispositivo. Las conversaciones se guardan solo en este navegador.`,
     fineMissing: (label, size) => `La primera respuesta necesita descargar una vez ${label}, ${size}. Corre en este dispositivo y las conversaciones se guardan solo en este navegador.`,
+    fineCpu: 'Este navegador no tiene WebGPU utilizable, así que el modelo corre en el procesador: más despacio que en una tarjeta gráfica.',
     thinking: 'Pensando…',
     reasoning: 'Razonamiento',
     stopped: 'Parada',
@@ -291,7 +295,7 @@ const ui = {
   send: $('send'), stop: $('stop'), fine: $('fine'), model: $('model'), modelName: $('model-name'), modelState: $('model-state'),
   list: $('chat-list'), empty: $('chats-empty'), side: $('side'), scrim: $('scrim'), sheet: $('apps-sheet'),
 };
-const device = { ok: null, id: null, why: '' };
+const device = { ok: null, id: null, why: '', cpu: false };
 const narrow = () => matchMedia('(max-width: 899px)').matches;
 let modelState = 'checking';        // checking | missing | cached | loading | ready
 let engine = null;
@@ -334,7 +338,21 @@ const model = () => (device.id ? MODELS[device.id] : null);
 const modelUrl = () => { const m = model(); return m && !Array.isArray(m.url) ? m.url : null; };
 
 // ---------- Device ----------
+// Without a usable WebGPU the engine runs the QAD-Q4_0 on the processor (WebAssembly SIMD, in a Worker): slower than
+// the graphics card, but it answers instead of showing «this browser cannot». The probe is the smallest module that
+// uses a SIMD instruction; a browser without SIMD fails it and keeps the old screen.
+const SIMD_PROBE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]);
+const cpuCan = () => { try { return typeof Worker === 'function' && WebAssembly.validate(SIMD_PROBE); } catch { return false; } };
+// `?cpu` in the address forces the processor even where WebGPU works: to try, on any device, what a browser without
+// it gets.
+const FORCE_CPU = /[?&]cpu(=|&|$)/.test(location.search);
 async function pickDevice() {
+  if (FORCE_CPU && cpuCan() && MODELS['lfm3-1.7b-q4']) return { ok: true, id: 'lfm3-1.7b-q4', cpu: true, why: '' };
+  const r = await pickGpu();
+  if (r.ok || !cpuCan() || !MODELS['lfm3-1.7b-q4']) return r;
+  return { ok: true, id: 'lfm3-1.7b-q4', cpu: true, why: r.why };
+}
+async function pickGpu() {
   if (!navigator.gpu) return { ok: false, why: 'whyNoWebgpu' };
   let a = null;
   try { a = await navigator.gpu.requestAdapter(); } catch { /* none */ }
@@ -378,7 +396,7 @@ function paintModel() {
   const m = model();
   if (!m) return;
   ui.model.hidden = false;
-  ui.modelName.textContent = m.label;
+  ui.modelName.textContent = m.label + (device.cpu ? ' · CPU' : '');
   const size = gb(m.bytes);
   ui.modelState.textContent = modelState === 'ready' ? t('stReady')
     : modelState === 'loading' ? t('stLoading')
@@ -386,7 +404,11 @@ function paintModel() {
     : modelState === 'missing' ? t('stMissing', size) : '';
   // The line under the box only speaks when there is something to know before sending: a download still to come.
   // Once the model is here it said the same thing on every message, and read as a warning nobody could act on.
-  const fine = modelState === 'missing' || (modelState === 'loading' && !wasCached) ? t('fineMissing', m.label, size) : null;
+  // On the processor it also says why the answers come slower, until the model is loaded.
+  const fine = [
+    modelState === 'missing' || (modelState === 'loading' && !wasCached) ? t('fineMissing', m.label, size) : null,
+    device.cpu && modelState !== 'ready' ? t('fineCpu') : null,
+  ].filter(Boolean).join(' ') || null;
   ui.fine.hidden = !fine;
   if (fine) {
     ui.fine.textContent = fine;
@@ -819,6 +841,21 @@ const cleanName = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').
 const ASKS_APP = /\b(app|apps|aplicaci[oó]n|aplicaciones|application|web ?app|calculadora|calculator|juego|game|formulario|form|dashboard|panel de control)\b/i;
 const ASKS_NEW = /\b(new|another|second|different|separate)\b|\b(nueva|nuevo|otra|otro|distinta|distinto|segunda|aparte)\b/i;
 const ASKS_EDIT = /\b(change|make (it|the)|add|remove|update|fix|edit|bigger|smaller|colou?rs?|tweak|instead|rename|move)\b|\b(cambia|ponle|pon |añade|añádele|quita|haz que|hazla|hazlo|arregla|actualiza|más grande|más pequeñ|colou?r|en vez|en lugar|mueve)\b/i;
+// Answering straight away (no reasoning), the small model sometimes wraps a plain answer in a bare HTML page: a
+// title, a heading, a paragraph. When no app was asked for and nothing in the page runs, styles or takes input, it
+// is not an app: it is shown as the text it says.
+const inertHtml = (h) => h.length < 4000 && !/<(script|style|input|button|select|textarea|canvas|svg|form|iframe|link)\b|\son\w+\s*=|style\s*=/i.test(h);
+function htmlText(h) {
+  const body = new DOMParser().parseFromString(h, 'text/html').body;
+  const parts = [];
+  for (const el of body.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, pre, blockquote, td')) {
+    if (el.closest('li, p, pre, blockquote, td') !== el && el.closest('li, p, pre, blockquote, td')) continue;
+    const s = el.textContent.replace(/\s+/g, ' ').trim();
+    if (!s) continue;
+    parts.push(/^H\d$/.test(el.tagName) ? `**${s}**` : el.tagName === 'LI' ? `- ${s}` : s);
+  }
+  return parts.join('\n\n') || body.textContent.replace(/\s+/g, ' ').trim();
+}
 
 // What the step stores about the call: enough to paint the card again, never the whole HTML twice.
 function callSummary(call) {
@@ -843,9 +880,6 @@ async function runTool(call, ctx) {
     case 'app.create': {
       let name = cleanName(a.name);
       const html = typeof a.html === 'string' ? a.html : '';
-      // A small model often leaves the name out when it rewrites the app open in the panel: that is the one it means.
-      // With no app open, the page's <title> names it.
-      if (!name && html.trim()) name = panel.openName() || cleanName(/<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1]);
       if (!name || !html.trim()) return fail(es ? 'Falta name o html' : 'Missing name or html');
       // A model that rewrites the open app as an HTML block may change its <title>, and so its name. If an app is
       // open and the user asked for a change (and not for a new app), the new version replaces the open one.
@@ -875,17 +909,6 @@ async function runTool(call, ctx) {
     }
     case 'app.open': {
       const name = cleanName(a.name);
-      // No name while an app is open ("fix it", "what does it do"): the model wants that app. It reads its HTML and how
-      // to save a new version, and the turn goes on, instead of an error the visitor cannot act on.
-      if (!name && panel.openName()) {
-        const open = panel.openName();
-        const err = panel.lastError();
-        const text = es
-          ? `La app «${open}» está abierta en el panel${err ? ` y da este error: ${err}` : ''}. Su HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nPara cambiarla o arreglarla, llama a app.create con name «${open}» y el HTML completo nuevo.`
-          : `The app “${open}” is open in the panel${err ? ` and shows this error: ${err}` : ''}. Its HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nTo change or fix it, call app.create with name “${open}” and the whole new HTML.`;
-        ctx.summary.name = open;
-        return { text, result: { name: open, saved: true } };
-      }
       if (!name) return fail(es ? 'Falta name' : 'Missing name');
       try {
         const app = await bridge.call('apps.get', { name });
@@ -1213,7 +1236,7 @@ function progressBox(li) {
         if (pct != null) { up = Math.max(up, pct); down = Math.max(down, up); }
       }
       if (DOWN_KEYS.has(key) && pct != null) down = Math.max(down, pct);
-      if (key === 'gpu') { phase = 'load'; down = 100; if (pct != null) up = Math.max(up, pct); }
+      if (key === 'gpu' || key === 'cpu') { phase = 'load'; down = 100; if (pct != null) up = Math.max(up, pct); }
       if (key === 'ready') { phase = 'done'; down = up = 100; }
       last = { key, args, pct };
       paint();
@@ -1251,6 +1274,7 @@ function onEngineProgress(p) {
   else if (/Descargando el modelo/i.test(str)) s.set('downloadingPct', [n ?? 0], n);
   else if (/disco|Recuperando/i.test(str)) s.set('fromDisk', [], null);
   else if (/índice/i.test(str)) s.set('index', [], null);
+  else if (/en la CPU/i.test(str)) s.set('cpu', [n ?? 0], n);
   else if (/GPU/i.test(str)) s.set('starting', [], null);
   else if (/listo/i.test(str)) s.set('ready', [], 100);
 }
@@ -1272,11 +1296,38 @@ async function notSavedNote(li, why) {
   li.before(item);
 }
 
+// A tab that stays hidden without answering lets the model go: on the processor it holds more than a gigabyte of
+// memory and a pool of threads, on the graphics card the same in video memory, and the visitor is doing something
+// else. The next message loads it again from this browser's store, with nothing to download. A turn that is running
+// when the tab hides is left to finish; nothing is kept awake on purpose.
+const RELEASE_HIDDEN_MS = { cpu: 3 * 60_000, gpu: 10 * 60_000 };
+let releaseTimer = null;
+let releasing = null;               // the unload in flight; a load waits for it
+function watchHidden() {
+  clearTimeout(releaseTimer);
+  releaseTimer = null;
+  if (!document.hidden || !loading) return;
+  releaseTimer = setTimeout(async () => {
+    const idle = () => document.hidden && !turn && loading;
+    if (!idle()) return;
+    try { await loading; } catch { return; }
+    if (!idle()) return;
+    loading = null;
+    releasing = engine.unload().catch(() => {}).finally(() => { releasing = null; });
+    await releasing;
+    console.info('[chat] model released: the tab was hidden and idle');
+    setModelState((await isCached()) ? 'cached' : 'missing');
+  }, device.cpu ? RELEASE_HIDDEN_MS.cpu : RELEASE_HIDDEN_MS.gpu);
+}
+document.addEventListener('visibilitychange', watchHidden);
+
 function loadEngine() {
   if (!loading) {
     setModelState('loading');
     loading = (async () => {
+      if (releasing) await releasing;
       engine = engine || await import('./js/engine/provider.js');
+      if (device.cpu) globalThis.__ELFFUSS_CPU = true;
       engine.configure(device.id);
       await engine.load(onEngineProgress);
     })().then(() => setModelState('ready'), (e) => { loading = null; isCached().then((c) => setModelState(c ? 'cached' : 'missing')); throw e; });
@@ -1397,6 +1448,9 @@ async function runTurn(li, mine, ctl, reason) {
   // Asked for an app: no reasoning step. The small model plans the whole page in its reasoning, spends the budget
   // (4,000 tokens, minutes on a phone) and has nothing left to write it with; straight away it writes the page.
   if (reason !== false && ASKS_APP.test(userText)) reason = false;
+  // On the processor it answers straight away: a thousand tokens of reasoning are minutes before the first letter
+  // there, and the engine keeps a shorter context on the processor, where the reasoning budget does not fit.
+  if (device.cpu) reason = false;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
   try {
@@ -1455,6 +1509,12 @@ async function runTurn(li, mine, ctl, reason) {
       msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
       msg.content = String(result || '').trim();
       const call = msg.content ? parseToolCall(msg.content) : null;
+      if (call?.fromHtml && !ASKS_APP.test(userText) && inertHtml(String(call.args?.html || ''))) {
+        // What it wrote before the page, if anything, is the answer; if not, the page's own text.
+        const before = msg.content.split(/```html|<!doctype html|<html[\s>]/i)[0].trim();
+        msg.content = before || htmlText(String(call.args.html));
+        break;
+      }
       if (!call) {
         // A call the model did not finish (the budget ran out inside it) is not run and not shown as markup.
         const wt = writingTool(msg.content);
@@ -1521,6 +1581,8 @@ async function runTurn(li, mine, ctl, reason) {
     finished = true;
     turn = null;
     setBusy(false);
+    // A turn that ended while the tab was hidden: the count to let the model go starts now.
+    if (document.hidden) watchHidden();
     if (msg && !stepPushed) {
       // A step stopped while it was writing a tool call keeps its words, not the half-written call.
       if (msg.stopped && !msg.call && writingTool(msg.content)) msg.content = writingTool(msg.content).before;
@@ -1560,7 +1622,9 @@ async function memoryTurn(mine) {
   const entry = MODELS[device.id];
   return memory.beginTurn({
     messages: mine.messages, conv: mine.memConv, incognito: !!mine.incognito,
-    model: { id: device.id, ctx: Number.isFinite(entry?.ctx) ? entry.ctx : null },
+    // On the processor the engine keeps a shorter context than the registry's (its cache is f32, in the same tab as
+    // the weights): the memory must pack for that one.
+    model: { id: device.id, ctx: (device.cpu && engine?.contextoEfectivo?.()) || (Number.isFinite(entry?.ctx) ? entry.ctx : null) },
   });
 }
 

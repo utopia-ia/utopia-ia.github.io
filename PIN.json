@@ -4,10 +4,40 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "4340c3265380af08e83bc9cef41d4061774bae6a",
-    "engineCommit": "4bf3a4444be9822baf52f45e76d3e1e773e378fe",
+    "commit": "011a42dde85e78b0b06e2e2ad61dca467be5d072",
+    "engineCommit": "c402a8692977e4e017e3c6e3fa6f42ad05a05fbc",
     "dir": "js",
     "files": [
+      {
+        "from": "js/cpu-hilo.js",
+        "to": "engine/cpu-hilo.js",
+        "sha256": "bb07f6b4dd660f69993def81aafb7642a16d1196f6829ce1de7ed1345fb4fee6"
+      },
+      {
+        "from": "js/cpu-jefe.js",
+        "to": "engine/cpu-jefe.js",
+        "sha256": "18fbf92a711e81f6e0d5077b71987a948d8fc84d13e653d76e453b8ecb569f57"
+      },
+      {
+        "from": "js/cpu-kernels.js",
+        "to": "engine/cpu-kernels.js",
+        "sha256": "adbdc0bb34116b4fc73927d51463859de08324787e3f88e48608a9a82e00628d"
+      },
+      {
+        "from": "js/cpu-proxy.js",
+        "to": "engine/cpu-proxy.js",
+        "sha256": "aef39a4fd49f60e209154e309fb3c3f0d23a15eed847ae818c24ea08251aa8ab"
+      },
+      {
+        "from": "js/cpu-trabajo.js",
+        "to": "engine/cpu-trabajo.js",
+        "sha256": "a3917a856b80ef842214861665d8503672d274c8e653f7d1f7a3c41e03828869"
+      },
+      {
+        "from": "js/cpu.js",
+        "to": "engine/cpu.js",
+        "sha256": "2e06ecba583a047d775ef0393f08f85dc1610df71c23b5b88cd230d79f5e89d1"
+      },
       {
         "from": "js/device.js",
         "to": "engine/device.js",
@@ -181,7 +211,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "8e9335937e5990e8fb7829d1766bc6b78f38f28278926761d8b43accd21fb970"
+        "sha256": "32c5a9beb50ae9442fdf5777a85fb45be91526b817a8be46f0df004fa3c9e44f"
       },
       {
         "from": "js/quant-tables.js",
