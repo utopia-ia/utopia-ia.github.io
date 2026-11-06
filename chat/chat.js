@@ -327,6 +327,11 @@ if (mirror) {
 // already sits near 1.7 GB, and the first prompt of a chat (about a thousand tokens) read 512 at a time pushed it past
 // the limit, so Safari killed the tab and reloaded it, again and again. Measured on an iPhone: 512 is killed, 64 answers.
 if (MODELS['lfm3-1.7b-q4']) MODELS['lfm3-1.7b-q4'].lote = 64;
+
+// The system prompt of this chat is fixed, so the engine may keep its snapshot on disk: the next visit starts from
+// there instead of reading the whole system prompt again before the first letter (engine provider.js, «prefijo de
+// sistema en disco»). Claw and Code leave it off: their system block changes at every step.
+globalThis.__ELFFUSS_PREFIJO_DISCO = true;
 const model = () => (device.id ? MODELS[device.id] : null);
 const modelUrl = () => { const m = model(); return m && !Array.isArray(m.url) ? m.url : null; };
 

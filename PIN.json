@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "fc4fb92c9bc6da4e0de7b363b1c514a477eb19e9",
-    "engineCommit": "ede31f5225b628fba765983f233941a2c8993602",
+    "commit": "8cd7251459016cc0f6a999c2aed2794c12474c88",
+    "engineCommit": "2b7021f263471077def074e6672498d85910f473",
     "dir": "js",
     "files": [
       {
@@ -181,7 +181,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "ed4ae80bbf55cf2471be0a34d56a161b62b317af61ec5026e2cc6d59c7d27dd5"
+        "sha256": "cdee18967198fe9284480d644f5f4decaa8efb492d2b0eab97bd963a9befcc1c"
       },
       {
         "from": "js/quant-tables.js",
@@ -206,7 +206,7 @@
       {
         "from": "js/state.js",
         "to": "engine/state.js",
-        "sha256": "168fbdeba5d4f851f3b0573cc3f2ec5348c511cb2108894029d1350da218c9ba"
+        "sha256": "e12539231fd06d49c39a341acebc4ed8b206e5bc9b8544ac5a7801ca667e47c7"
       },
       {
         "from": "js/tokenizer.js",

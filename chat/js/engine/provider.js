@@ -147,6 +147,87 @@ let perdida = '';                          // motivo si el dispositivo se perdi�
 // poner al terminar bien: si un turno revienta a medias, el siguiente reinicia.
 let consumidos = null;
 
+// ── El prompt de sistema, guardado en disco ─────────────────────────────────
+// La foto del sistema (ver la ranura 'sistema' en state.js) vivía solo en la
+// memoria de la pestaña: cada visita nueva volvía a procesar el prompt de
+// sistema entero antes de la primera letra. En un teléfono es la espera más
+// larga de cada visita, y se repetía en todas. Ahora la foto
+// —estado recurrente más las filas de la caché KV de esas posiciones— se guarda
+// en IndexedDB y la visita siguiente arranca desde ahí.
+//
+// La HUELLA es estricta porque una foto ajena no falla, contesta con el estado
+// de otra conversación: modelo (url y bytes), formato de la caché, versión de
+// este formato y las fichas EXACTAS del bloque de sistema, que además se
+// vuelven a comparar una a una al cargar. \`PREFIJO_FORMATO\` sube cuando cambie
+// la numérica del forward o lo que se guarda.
+// APAGADO por defecto: lo enciende la página con \`__ELFFUSS_PREFIJO_DISCO = true\`.
+// Solo sirve donde el prompt de sistema es FIJO (el chat de elffuss.com). En
+// Claw y Code el bloque de sistema lleva el estado vivo y cambia a cada paso:
+// guardarlo sería escribir mucho en cada visita para no reutilizarlo
+// nunca. Y como mucho UNA escritura por visita, por lo mismo.
+const PREFIJO_FORMATO = 1;
+let prefijoGuardadoEnVisita = false;
+const PREFIJO_GUARDADOS = 3;            // fotos que se conservan (las más recientes)
+const prefijoDiscoActivo = () => globalThis.__ELFFUSS_PREFIJO_DISCO === true && typeof indexedDB !== 'undefined';
+function abrePrefijos() {
+  return new Promise((ok, mal) => {
+    const rq = indexedDB.open('elffuss-prefijos', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('fotos');
+    rq.onsuccess = () => ok(rq.result);
+    rq.onerror = () => mal(rq.error);
+  });
+}
+const pideIdb = (rq) => new Promise((ok, mal) => { rq.onsuccess = () => ok(rq.result); rq.onerror = () => mal(rq.error); });
+async function huellaPrefijo(fichas) {
+  const m = MODELS[clave] || {};
+  const url = Array.isArray(m.url) ? m.url.map((f) => f.url).join('|') : String(m.url || '');
+  const texto = JSON.stringify([PREFIJO_FORMATO, url, m.bytes || 0, sesion?.state?.kvF16 ?? null, fichas.length, fichas.join(',')]);
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function guardaPrefijo(fichas) {
+  if (!prefijoDiscoActivo() || !sesion || prefijoGuardadoEnVisita) return;
+  prefijoGuardadoEnVisita = true;
+  const salida = sesion.state.exportaInstantanea('sistema');
+  if (!salida) return;
+  try {
+    const [datos, llave] = await Promise.all([salida, huellaPrefijo(fichas)]);
+    const db = await abrePrefijos();
+    const tx = db.transaction('fotos', 'readwrite');
+    const st = tx.objectStore('fotos');
+    await pideIdb(st.put({ t: Date.now(), fichas: Array.from(fichas), ...datos }, llave));
+    const todas = await pideIdb(st.getAllKeys());
+    if (todas.length > PREFIJO_GUARDADOS) {
+      const conT = [];
+      for (const k of todas) conT.push([k, (await pideIdb(st.get(k)))?.t || 0]);
+      conT.sort((a, b) => b[1] - a[1]);
+      for (const [k] of conT.slice(PREFIJO_GUARDADOS)) st.delete(k);
+    }
+    db.close();
+    console.log(`[engine] prefijo de sistema guardado en disco · ${fichas.length} fichas`);
+  } catch (e) {
+    console.warn('[engine] no se pudo guardar el prefijo de sistema:', e?.message || e);
+  }
+}
+async function cargaPrefijo(fichas) {
+  if (!prefijoDiscoActivo() || !sesion) return false;
+  try {
+    const llave = await huellaPrefijo(fichas);
+    const db = await abrePrefijos();
+    const st = db.transaction('fotos', 'readwrite').objectStore('fotos');
+    const d = await pideIdb(st.get(llave));
+    if (d) st.put({ ...d, t: Date.now() }, llave);
+    db.close();
+    if (!d || !Array.isArray(d.fichas) || d.fichas.length !== fichas.length || d.fichas.some((t, k) => t !== fichas[k])) return false;
+    const ok = sesion.state.importaInstantanea('sistema', d);
+    if (ok) console.log(`[engine] prefijo de sistema cargado de disco · ${fichas.length} fichas sin procesar`);
+    return ok;
+  } catch (e) {
+    console.warn('[engine] no se pudo leer el prefijo de sistema:', e?.message || e);
+    return false;
+  }
+}
+
 export function configure(key) {
   if (key && MODELS[key] && key !== clave) {
     clave = key;
@@ -1291,6 +1372,12 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   // se apaga en vez de restaurar un punto que no es el que se cree.
   const sistemaEsPrefijo = fichasSistema.length < cabeza.length &&
     fichasSistema.every((t, k) => t === cabeza[k]);
+  // Primera vuelta de esta visita (nada ingerido aún): la foto del sistema
+  // puede estar en disco de una visita anterior.
+  if (!sistemaFoto && !consumidos && quiereReuso && sistemaEsPrefijo && sesion.state.nPast === 0 &&
+      await cargaPrefijo(fichasSistema)) {
+    sistemaFoto = fichasSistema;
+  }
   const mismoSistema = !!sistemaFoto && sistemaFoto.length === fichasSistema.length &&
     sistemaFoto.every((t, k) => t === fichasSistema[k]);
 
@@ -1407,6 +1494,7 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
       sesion.recycle();
       sesion.state.instantanea('sistema');
       sistemaFoto = fichasSistema;
+      guardaPrefijo(fichasSistema);     // sin esperar: las copias ya van en la cola
       if (entradaCabeza.length > n) {
         await sesion.forward(entradaCabeza.slice(n), opciones(n, total));
         sesion.recycle();
