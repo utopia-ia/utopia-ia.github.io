@@ -327,6 +327,9 @@ if (mirror) {
 // already sits near 1.7 GB, and the first prompt of a chat (about a thousand tokens) read 512 at a time pushed it past
 // the limit, so Safari killed the tab and reloaded it, again and again. Measured on an iPhone: 512 is killed, 64 answers.
 if (MODELS['lfm3-1.7b-q4']) MODELS['lfm3-1.7b-q4'].lote = 64;
+// An answer without reasoning may run to 3,000 tokens, not the registry's 512: a small app is one whole HTML document,
+// and at 512 it came out cut in the middle of its form (measured on a phone, with a health-record app).
+for (const id of ['lfm3-1.7b', 'lfm3-1.7b-q4']) if (MODELS[id]) MODELS[id].tope = Math.max(MODELS[id].tope || 0, 3000);
 
 // The system prompt of this chat is fixed, so the engine may keep its snapshot on disk: the next visit starts from
 // there instead of reading the whole system prompt again before the first letter (engine provider.js, «prefijo de
@@ -818,6 +821,7 @@ function requirePerm(scope, detail, li, signal) {
 
 // ---------- Running a tool ----------
 const cleanName = (s) => String(s || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+const ASKS_APP = /\b(app|apps|aplicaci[oó]n|aplicaciones|application|web ?app|calculadora|calculator|juego|game|formulario|form|dashboard|panel de control)\b/i;
 const ASKS_NEW = /\b(new|another|second|different|separate)\b|\b(nueva|nuevo|otra|otro|distinta|distinto|segunda|aparte)\b/i;
 const ASKS_EDIT = /\b(change|make (it|the)|add|remove|update|fix|edit|bigger|smaller|colou?rs?|tweak|instead|rename|move)\b|\b(cambia|ponle|pon |añade|añádele|quita|haz que|hazla|hazlo|arregla|actualiza|más grande|más pequeñ|colou?r|en vez|en lugar|mueve)\b/i;
 
@@ -1381,6 +1385,9 @@ async function runTurn(li, mine, ctl, reason) {
   let finished = false;
   let stepPushed = false;           // the current step's message is already in the chat (a tool step)
   const userText = [...mine.messages].reverse().find((m) => m.role === 'user' && m.meta !== 'result')?.content || '';
+  // Asked for an app: no reasoning step. The small model plans the whole page in its reasoning, spends the budget
+  // (4,000 tokens, minutes on a phone) and has nothing left to write it with; straight away it writes the page.
+  if (reason !== false && ASKS_APP.test(userText)) reason = false;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
   try {
