@@ -638,6 +638,14 @@ export async function load(onProgress = () => {}) {
       // Los interruptores «rápido» de esta arquitectura, ANTES de cargar los
       // pesos (ver `aplicaRapido`); y fuera los que se pusieron para otra.
       const rapido = aplicaRapido(info.meta['general.architecture']);
+      // Sin subgrupos (el teléfono) el GEMM del prompt va por la tesela con memoria
+      // compartida: medido en un teléfono, ida y vuelta, ×1,24 al leer el prompt y
+      // el mismo texto token a token que el exacto. En un ordenador con subgrupos
+      // perdía, así que allí no se toca. La página manda si ya lo fijó.
+      if (gpu && !gpu.subgroupSize && globalThis.__ELFFUSS_GEMM2_TESELA === undefined && rapido.includes('__ELFFUSS_GEMM2')) {
+        globalThis.__ELFFUSS_GEMM2_TESELA = true;
+        rapido.push('__ELFFUSS_GEMM2_TESELA');
+      }
       if (rapido.length) console.info(`[engine] interruptores rápidos por defecto: ${rapido.join(' ')}`);
       tk = createTokenizer(info.meta);
       // El lote del prefill es del MODELO: 32 por defecto (el bucle recurrente
