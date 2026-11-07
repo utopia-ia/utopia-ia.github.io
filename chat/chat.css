@@ -155,17 +155,25 @@ body { overflow: hidden; background: var(--ef-wall); }
   font: inherit; font-size: var(--ef-text-base); line-height: 1.45;
 }
 .composer textarea::placeholder { color: var(--ef-graphite); }
-.mem-btn {
+/* By id, not by class: the engine's memory cards call their own buttons .mem-btn, and this square icon size
+   squeezed their «Retry» into two lines. */
+#mem-btn {
   position: relative; display: grid; place-items: center; width: 40px; height: 40px; flex: none;
   border: 0; border-radius: var(--ef-r2); background: transparent; color: var(--ef-graphite); cursor: pointer;
   transition: background-color var(--ef-fast) var(--ef-ease), color var(--ef-fast) var(--ef-ease);
 }
-.mem-btn[hidden] { display: none; }
-.mem-btn:hover { background: var(--ef-board); color: var(--ef-ink); }
-.mem-btn .ic { grid-area: 1 / 1; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-.mem-btn .mem-off-line { display: none; stroke-width: 2; }
-.mem-btn.is-off { color: var(--ef-ink); background: var(--ef-board); }
-.mem-btn.is-off .mem-off-line { display: block; }
+#mem-btn[hidden] { display: none; }
+#mem-btn:hover { background: var(--ef-board); color: var(--ef-ink); }
+#mem-btn .ic { grid-area: 1 / 1; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+#mem-btn .mem-off-line { display: none; stroke-width: 2; }
+#mem-btn.is-off { color: var(--ef-ink); background: var(--ef-board); }
+#mem-btn.is-off .mem-off-line { display: block; }
+/* The engine's memory cards bring light colours inline; here they take the page's. */
+.mem-root {
+  --mem-bg: var(--ef-surface) !important; --mem-fg: var(--ef-ink) !important; --mem-muted: var(--ef-graphite) !important;
+  --mem-border: var(--ef-steel) !important; --mem-accent: var(--ef-tape) !important; --mem-accent-fg: var(--ef-on-ink) !important;
+  --mem-danger: var(--ef-err) !important;
+}
 .send {
   display: grid; place-items: center; width: 40px; height: 40px; flex: none;
   border: 0; border-radius: var(--ef-r2); background: var(--ef-ink); color: var(--ef-on-ink); cursor: pointer;
