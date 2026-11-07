@@ -27,7 +27,7 @@ import * as web from './web.js';
 import * as appview from './appview.js';
 import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
 import { parseToolCall, writingTool, systemPrompt, contextBlock, withContext, CONTEXT_LABEL } from './tools.js';
-import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes } from './media-tools.js';
+import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes, describedLine } from './media-tools.js';
 import { needsMediaTools, hasMediaIn } from './media-intent.js';
 import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
 import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, startRecording, toMono16k, keepVoiceNote } from './attach.js';
@@ -199,10 +199,21 @@ const T = {
     mediaGone: 'No longer in this browser.',
     mediaCannot: 'Not on this device',
     mediaDenied: 'Nothing was downloaded, so nothing was made.',
+    mediaNeed: (verb, size) => `To ${verb}, ${size} has to be downloaded once.`,
+    mediaNeedBtn: (verb) => `Download and ${verb}`,
+    mediaVerb: { 'image.generate': 'make the picture', 'video.animate': 'animate it', 'video.generate': 'make the video', 'audio.music': 'make the music', 'audio.sfx': 'make the sound', 'audio.speak': 'read it aloud', 'image.describe': 'look at it' },
+    mediaLooked: 'Looked at',
+    looking: 'Looking at the picture…',
+    unseen: (id, r) => `[${id}] (the picture could not be looked at${r ? `: ${r}` : ''}; if asked what it shows, say so and do not guess)`,
+    onlyAttach: '(The user only sent this picture, with no text. Say in one or two sentences, in their language, what it shows. Do not call any tool.)',
+    seenChips: ['Animate it', 'Make it a watercolour', 'What is in it?'],
     mediaHere: 'Made on this device. Kept in this browser.',
-    mgTitle: { image: 'Download the picture model?', audio: 'Download the audio model?', video: 'Download the video model?', voice: 'Download the voice model?' },
+    mgTitle: { image: 'Download the picture model?', audio: 'Download the audio model?', video: 'Download the video model?', voice: 'Download the voice model?', vision: 'Download the model that looks at pictures?' },
     mgBody: 'It runs on this device, so nothing you ask for leaves it. The model is downloaded once and kept in this browser for every Elffuss app. While it works, the chat model steps aside and comes back after.',
     mgBtn: (size) => `Download ${size} and make it`,
+    mgBtnVision: (size) => `Download ${size} and look`,
+    mgBodyVision: 'It runs on this device, so the picture does not leave it. The model is downloaded once and kept in this browser for every Elffuss app; what a picture shows is kept with it.',
+    noToolHere: 'No tool is needed: what the picture shows is above. Answer in plain text, in the user\'s language, in one or two sentences.',
     mgNo: 'Not now',
     attach: 'Attach',
     attReading: 'Reading…',
@@ -355,10 +366,21 @@ const T = {
     mediaGone: 'Ya no está en este navegador.',
     mediaCannot: 'No en este dispositivo',
     mediaDenied: 'No se ha descargado nada, así que no se ha hecho.',
+    mediaNeed: (verb, size) => `Para ${verb} hace falta descargar ${size} una vez.`,
+    mediaNeedBtn: (verb) => `Descargar y ${verb}`,
+    mediaVerb: { 'image.generate': 'hacer la imagen', 'video.animate': 'animarla', 'video.generate': 'hacer el vídeo', 'audio.music': 'hacer la música', 'audio.sfx': 'hacer el sonido', 'audio.speak': 'leerlo en voz alta', 'image.describe': 'mirarla' },
+    mediaLooked: 'Vista',
+    looking: 'Mirando la imagen…',
+    unseen: (id, r) => `[${id}] (no se pudo describir la imagen${r ? `: ${r}` : ''}; si te preguntan qué muestra, dilo así y no lo inventes)`,
+    onlyAttach: '(El usuario solo ha enviado esta imagen, sin texto. Di en una o dos frases, en su idioma, lo que se ve en ella. No llames a ninguna herramienta.)',
+    seenChips: ['Anímala', 'Hazla en acuarela', '¿Qué hay en ella?'],
     mediaHere: 'Hecho en este dispositivo. Guardado en este navegador.',
-    mgTitle: { image: '¿Descargar el modelo de imágenes?', audio: '¿Descargar el modelo de audio?', video: '¿Descargar el modelo de vídeo?', voice: '¿Descargar el modelo de voz?' },
+    mgTitle: { image: '¿Descargar el modelo de imágenes?', audio: '¿Descargar el modelo de audio?', video: '¿Descargar el modelo de vídeo?', voice: '¿Descargar el modelo de voz?', vision: '¿Descargar el modelo que mira las imágenes?' },
     mgBody: 'Corre en este dispositivo, así que lo que pides no sale de él. El modelo se descarga una vez y queda en este navegador para todas las apps de Elffuss. Mientras trabaja, el modelo del chat se aparta y vuelve después.',
     mgBtn: (size) => `Descargar ${size} y hacerlo`,
+    mgBtnVision: (size) => `Descargar ${size} y mirarla`,
+    mgBodyVision: 'Corre en este dispositivo, así que la imagen no sale de él. El modelo se descarga una vez y queda en este navegador para todas las apps de Elffuss; lo que muestra una imagen se guarda con ella.',
+    noToolHere: 'No hace falta ninguna herramienta: lo que se ve en la imagen está arriba. Responde con texto, en el idioma del usuario, en una o dos frases.',
     mgNo: 'Ahora no',
     attach: 'Adjuntar',
     attReading: 'Leyendo…',
@@ -801,6 +823,17 @@ function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
   }
   if (m.note) {
     const n = document.createElement('p'); n.className = 'note'; n.textContent = t(m.note); li.append(n);
+  }
+  // After a picture sent alone: what to do with it, each chip sends its words.
+  li.querySelector('.seen-chips')?.remove();
+  if (m.seenChips && !writing && (!chat?.messages?.includes(m) || chat.messages[chat.messages.length - 1] === m)) {
+    const row = el('div', 'seen-chips');
+    for (const words of t('seenChips')) {
+      const b = el('button', 'mini-btn', words); b.type = 'button'; b.dataset.seenChip = '';
+      b.addEventListener('click', () => { row.remove(); send(words, { typed: true }); }, { once: true });
+      row.append(b);
+    }
+    li.append(row);
   }
   // An app the model wrote on a turn that asked for none: shown as code, and built only if the user presses this.
   li.querySelector('.make-app')?.remove();
@@ -1268,13 +1301,22 @@ async function runTool(call, ctx) {
 // The SDK copy is this site's /vendor/elffuss-ai/ (ai-sync.mjs). One media task at a time; while it runs the chat
 // model is unloaded (its graphics memory goes to the task: a phone tab has about 2 GB), and it is loaded again after.
 const AI_BASE = new URL('../vendor/elffuss-ai/', import.meta.url);
+let preApproved = false;             // the next download question is already answered «yes» (a card's retry button)
 let mediaUi = null;                  // { li, signal } of the step running a media tool: where its question goes
 const media = createMediaTools({
   base: AI_BASE,
   lang: () => lang,
   unloadLlm,
   reloadLlm: () => (device.ok ? loadEngine() : null),
-  consent: (q) => (mediaUi ? untilStopped(mediaGate(mediaUi.li, q, mediaUi.signal), mediaUi.signal) : Promise.resolve(false)),
+  // The download question in the message that asked; a retry from a card has already said yes. Never a silent «no»:
+  // with no step to show it in, it goes under the newest answer (it used to answer false, and the card then said
+  // «nothing was downloaded» without anyone being asked).
+  consent: (q) => {
+    if (preApproved) { preApproved = false; return Promise.resolve(true); }
+    if (mediaUi) return untilStopped(mediaGate(mediaUi.li, q, mediaUi.signal), mediaUi.signal);
+    const li = [...ui.thread.querySelectorAll('.msg-bot')].pop();
+    return li ? mediaGate(li, q, null) : Promise.resolve(false);
+  },
 });
 
 // Lets the model go from the graphics card, as a hidden tab does (watchHidden), and waits until it is gone.
@@ -1328,12 +1370,12 @@ function mediaGate(li, q, signal) {
     const paint = () => {
       box.textContent = '';
       const h = el('h2', null, t('mgTitle')[q.kind] || t('mgTitle').image);
-      const p = el('p', null, t('mgBody'));
+      const p = el('p', null, q.kind === 'vision' ? t('mgBodyVision') : t('mgBody'));
       const size = el('p', 'size');
       size.append(el('b', null, formatBytes(q.bytes, lang)), el('span', null, t('bytes', num(q.bytes))));
       const yes = el('button', 'btn'); yes.type = 'button'; yes.dataset.mediaYes = '';
       yes.innerHTML = svg('i-down');
-      yes.append(document.createTextNode(q.kind === 'voice' ? t('gateBtn', formatBytes(q.bytes, lang)) : t('mgBtn', formatBytes(q.bytes, lang))));
+      yes.append(document.createTextNode(q.kind === 'voice' ? t('gateBtn', formatBytes(q.bytes, lang)) : q.kind === 'vision' ? t('mgBtnVision', formatBytes(q.bytes, lang)) : t('mgBtn', formatBytes(q.bytes, lang))));
       const no = el('button', 'mini-btn ask-no', t('mgNo')); no.type = 'button'; no.dataset.mediaNo = '';
       yes.addEventListener('click', () => finish(true), { once: true });
       no.addEventListener('click', () => finish(false), { once: true });
@@ -1406,11 +1448,60 @@ function paintMediaCard(li, card, body, m, r, c) {
     mediaUrl(r.media.id).then((u) => { if (u) a.href = u; else a.remove(); }).catch(() => {});
     return;
   }
+  if (r.described) {
+    // Looked at again (image.describe): what the model read, in a short card, not an error.
+    body.append(el('span', 'tc-kicker', `${t('mediaLooked')} · ${c.image || r.image || ''}`));
+    body.append(el('span', 'tc-line', [r.described.caption, r.described.text && `«${r.described.text}»`].filter(Boolean).join(' ').slice(0, 300)));
+    card.append(body);
+    return;
+  }
+  if (r.denied) {
+    // The download was not agreed: say what it takes, and offer to do it now (the same call, already agreed).
+    const verb = t('mediaVerb')[c.tool] || t('mediaVerb')['image.generate'];
+    body.append(el('span', 'tc-kicker', t('mediaKind')[kind] || ''));
+    if (what) body.append(el('b', 'tc-title', what));
+    body.append(el('span', 'tc-line', r.need ? t('mediaNeed', verb, formatBytes(r.need, lang)) : t('mediaDenied')));
+    card.append(body);
+    const acts = el('div', 'tc-actions');
+    const b = el('button', 'mini-btn', t('mediaNeedBtn', verb)); b.type = 'button'; b.dataset.mediaRetry = '';
+    b.addEventListener('click', () => retryMedia(li, m), { once: true });
+    acts.append(b);
+    card.append(acts);
+    return;
+  }
   card.classList.add('is-error');
   body.append(el('span', 'tc-kicker', r.cannot ? t('mediaCannot') : t('toolFailed')));
   if (what) body.append(el('b', 'tc-title', what));
-  body.append(el('span', 'tc-line', r.denied ? t('mediaDenied') : (r.error || '')));
+  body.append(el('span', 'tc-line', r.error || ''));
   card.append(body);
+}
+
+// «Descargar y animarla» on a card whose download was not agreed: the same call again, the download already agreed,
+// in the same card. The card is the answer, as it would have been.
+async function retryMedia(li, m) {
+  if (turn || !m?.call) return;
+  const mine = chat;
+  const args = { ...(m.call.prompt ? { prompt: m.call.prompt } : {}), ...(m.call.text ? { text: m.call.text } : {}), ...(m.call.image ? { image: m.call.image } : {}) };
+  const ctl = new AbortController();
+  turn = { ctl, chatId: mine?.id };
+  setBusy(true);
+  m.result = { pending: true };
+  paintBot(li, m);
+  preApproved = true;
+  try {
+    const ctx = { li, signal: ctl.signal, summary: m.call, progress: (p) => { m.live = p; paintMediaProgress(li, p); } };
+    const res = await runMedia({ tool: m.call.tool, args }, ctx);
+    m.result = res.result;
+  } catch (e) {
+    m.result = { ...m.call, error: ctl.signal.aborted ? t('stopped') : String(e?.message || e) };
+  } finally {
+    preApproved = false;
+    delete m.live;
+    turn = null;
+    setBusy(false);
+    paintBot(li, m);
+    if (mine) { mine.updated = Date.now(); await store.put(mine).catch(() => {}); }
+  }
 }
 
 // The live state for the model, read from Claw's storage on every step, as Claw's snapshot() does: the apps and the
@@ -1872,6 +1963,7 @@ async function send(text, { typed = false, attach = [] } = {}) {
     ...(kept.length ? { attach: kept, context } : {}) });
   await save();
   ui.main.classList.remove('is-empty');
+  for (const c of ui.thread.querySelectorAll('.seen-chips')) c.remove();   // what to do with a picture: only until the next message
   appendUser(text, kept);
   paintList();
   const li = appendBot();
@@ -1919,6 +2011,41 @@ function addressToRead(text) {
   return { tool: 'web.fetch', args: { url }, forced: true };
 }
 
+// The pictures attached to a message, looked at once (media-tools.js describe(): Florence-2 in this browser). What
+// they show goes into the message's context for the model, in the same words on every later turn; a picture that
+// could not be looked at says so, and why, so the model says it rather than «I only have its id».
+async function lookAtAttachments(li, mine, msg, signal) {
+  const imgs = (msg?.attach || []).filter((a) => a.kind === 'image' && !a.seen);
+  if (!imgs.length || mirror) return;
+  const line = el('p', 'building');
+  line.setAttribute('aria-live', 'polite');
+  const lines = [];
+  try {
+    for (const a of imgs) {
+      line.textContent = t('looking');
+      if (!line.isConnected) li.append(line);
+      mediaUi = { li, signal };
+      let d;
+      try { d = await untilStopped(media.describe(a.id, { signal, lang, onProgress: (p) => { line.textContent = p?.text || t('looking'); } }), signal); }
+      finally { mediaUi = null; }
+      const ok = d && d.reason == null && d.error == null;
+      a.seen = ok ? 'ok' : (d?.reason || 'failed');
+      lines.push(ok ? describedLine({ id: a.id, described: d }, lang) : t('unseen', a.id, d?.reason === 'denied' ? '' : (d?.error || '')));
+    }
+  } finally { line.remove(); }
+  const extra = lines.filter(Boolean).join('\n') + (!String(msg.content || '').trim() && msg.attach.every((a) => a.kind === 'image') ? '\n' + t('onlyAttach') : '');
+  // The «not looked at yet» note of each picture goes: it has been looked at now (or why not is said below).
+  let base = msg.context || '';
+  for (const a of imgs) base = base.replace(new RegExp(` \\((?:sin mirar todavía|not looked at yet)[^)]*${a.id}[^)]*\\)`), '');
+  msg.context = (base ? base + '\n' : '') + extra;
+  await store.put(mine).catch(() => {});
+}
+// What a picture sent alone shows, for an answer the model left empty: its description as the chat has it.
+function seenText(msg) {
+  const lines = String(msg?.context || '').split('\n').filter((l) => /^\[img-/.test(l));
+  return lines.join('\n') || t('anythingElse');
+}
+
 async function runTurn(li, mine, ctl, reason) {
   setBusy(true);
   let msg = { role: 'assistant', content: '', thinking: '' };
@@ -1937,17 +2064,24 @@ async function runTurn(li, mine, ctl, reason) {
   // named, or a request to make one), decided once, without the model. Otherwise the prompt is the one from before
   // the media tools, byte for byte, and the engine reuses its prefix.
   const lastUser = [...mine.messages].reverse().find((m) => m.role === 'user' && m.meta !== 'result');
-  const mediaTurn = !mirror && needsMediaTools(lastUser?.content || '', {
+  // Only a picture, no words: the chat says what it sees and offers what to do with it (chips); no tool runs. Kiko,
+  // on elffuss.com: a photo sent alone made the model animate it, and the card said it had failed.
+  const onlyAttach = !String(lastUser?.content || '').trim() && (lastUser?.attach || []).length > 0 && lastUser.attach.every((a) => a.kind === 'image');
+  const mediaTurn = !onlyAttach && !mirror && needsMediaTools(lastUser?.content || '', {
     attachments: lastUser?.attach?.length || 0,
     hasMedia: hasMediaIn(mine.messages.map((m) => `${m.context || ''}\n${m.content || ''}`).join('\n')),
   }).media;
   // The app tools likewise (app-intent.js): asked for an app, an app open in the panel and a change or fix for it, or
   // a saved app named. Decided on the first step, when the list of saved apps is at hand.
-  let appTurn = null;
+  let appTurn = onlyAttach ? false : null;
+  let attachNudged = false;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
   try {
     await checked;
+    // The pictures of the message are looked at before the model answers (once: the words are kept with them), so the
+    // model reads what they show instead of «you cannot see it».
+    await lookAtAttachments(li, mine, lastUser, ctl.signal);
     if (modelState !== 'ready') {
       if (modelState === 'missing') { stage = 'gate'; await gate(li, ctl.signal); }
       if (ctl.signal.aborted) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
@@ -2017,6 +2151,19 @@ async function runTurn(li, mine, ctl, reason) {
         msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
         msg.content = stripEcho(String(result || '').trim());
         call = msg.content ? parseToolCall(msg.content) : null;
+        if (call && onlyAttach) {
+          // Only a picture was sent: no tool runs. Measured with LFM3: it still writes a call; told once that none is
+          // needed, it answers in words. After that, the words before the call, or what the picture shows.
+          const before = msg.content.split(/```|<function|<tool_call>|\{\s*"tool"/i)[0].trim();
+          if (!before && !attachNudged) {
+            attachNudged = true;
+            mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${t('noToolHere')}`, meta: 'result' });
+            li.remove();
+            continue;
+          }
+          msg.content = before || seenText(lastUser);
+          break;
+        }
         if (call?.tool === 'app.create') {
           const html = String(call.args?.html || '');
           const before = msg.content.split(/```(?:html|tool)|<!doctype html|<html[\s>]/i)[0].trim();
@@ -2130,6 +2277,7 @@ async function runTurn(li, mine, ctl, reason) {
     setBusy(false);
     // A turn that ended while the tab was hidden: the count to let the model go starts now.
     if (document.hidden) watchHidden();
+    if (msg && !stepPushed && onlyAttach && !msg.stopped && (msg.content || '').trim()) msg.seenChips = true;
     if (msg && !stepPushed) {
       // A step stopped while it was writing a tool call keeps its words, not the half-written call.
       if (msg.stopped && !msg.call && writingTool(msg.content)) msg.content = writingTool(msg.content).before;

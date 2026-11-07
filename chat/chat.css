@@ -674,3 +674,6 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 .att-chip.is-rec .ic { color: var(--ef-err); animation: rec-pulse 1.2s ease-in-out infinite; }
 @keyframes rec-pulse { 50% { opacity: 0.35; } }
 .msg-note:empty { display: none; }
+
+/* After a picture sent alone: what to do with it. */
+.seen-chips { display: flex; flex-wrap: wrap; gap: var(--ef-s2); margin-top: var(--ef-s2); }
