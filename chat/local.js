@@ -9,6 +9,8 @@
 // apps {name, html, created}, the same rule for the generic names «app» and «boceto». So the chat code does not know
 // which one answers. Nothing here is ever sent anywhere.
 
+import { connection, transaction } from './idb.js';
+
 const DB = 'elffuss-home-local';
 const MAX_NAME = 80;
 const MAX_HTML = 512 * 1024;
@@ -19,27 +21,17 @@ const need = (cond, code = 'bad-request') => { if (!cond) throw fail(code); };
 const text = (x, max) => typeof x === 'string' && x.trim().length > 0 && x.length <= max;
 const nameOk = (x) => text(x, MAX_NAME) && !RE_CONTROL.test(x);
 
-let opening = null;
-function db() {
-  if (opening) return opening;
-  opening = new Promise((resolve, reject) => {
-    let req;
-    try { req = indexedDB.open(DB, 1); } catch { reject(fail('bridge-down')); return; }
-    req.onupgradeneeded = () => { req.result.createObjectStore('apps', { keyPath: 'name' }); };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = req.onblocked = () => { opening = null; reject(fail('bridge-down')); };
-  });
-  return opening;
-}
-async function tx(store, mode, fn) {
-  const d = await db();
-  return new Promise((resolve, reject) => {
-    const t = d.transaction(store, mode);
-    const out = fn(t.objectStore(store));
-    t.oncomplete = () => resolve(out?.result);
-    t.onerror = t.onabort = () => reject(fail('bridge-down'));
-  });
-}
+// Reopened if the browser closes it (see idb.js).
+const withDb = connection(() => new Promise((resolve, reject) => {
+  let req;
+  try { req = indexedDB.open(DB, 1); } catch { reject(fail('bridge-down')); return; }
+  req.onupgradeneeded = () => { req.result.createObjectStore('apps', { keyPath: 'name' }); };
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = req.onblocked = () => reject(fail('bridge-down'));
+}));
+const tx = (store, mode, fn) => withDb((d) => transaction(d, store, mode, fn)).catch((e) => {
+  throw e?.code === 'bridge-down' ? e : fail('bridge-down');
+});
 const all = (s) => tx(s, 'readonly', (o) => o.getAll());
 const get = (s, k) => tx(s, 'readonly', (o) => o.get(k));
 const put = (s, v) => tx(s, 'readwrite', (o) => o.put(v));
@@ -77,7 +69,7 @@ const OPS = {
 
 // Is this browser's storage usable? (A private window or a blocked site storage says no.)
 export async function available() {
-  try { await db(); return true; } catch { return false; }
+  try { await withDb(() => null); return true; } catch { return false; }
 }
 
 export async function call(op, args = {}) {

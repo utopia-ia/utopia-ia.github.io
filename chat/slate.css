@@ -1,0 +1,67 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (c) 2026 UtopiaIA */
+/* The chat in the slate of the other Elffuss apps: the tokens of tokens.css remapped, nothing else restyled. Lighter than
+   Claw and Code. Contrast measured (WCAG) on the page #303752 and the sidebar #272c44: text 10.3:1, secondary 6.3:1, every
+   app colour 5.1:1 or more, dark text on the brass buttons 8.4:1. */
+:root {
+  --ef-wall: #303752;
+  --ef-surface: #272c44;
+  --ef-board: #3a4263;
+  --ef-board-hole: #4a5378;
+  --ef-steel: #465073;
+  --ef-steel-strong: #7d86a8;
+
+  --ef-ink: #f1eff7;
+  --ef-graphite: #b9bed6;
+  --ef-on-ink: #1b1d2a;
+
+  --ef-tape: #ffc629;
+  --ef-tape-soft: #4a4530;
+
+  --ef-ok: #5bd08a;
+  --ef-ok-soft: #264236;
+  --ef-warn: #f0c060;
+  --ef-warn-soft: #4a4530;
+  --ef-err: #ff8aa3;
+  --ef-err-soft: #4a2c3d;
+
+  --ef-claw: #4fd1a5;
+  --ef-translator: #4cc3e6;
+  --ef-copiloto: #e0b050;
+  --ef-code: #9fb0ff;
+  --ef-braid: #b79bff;
+
+  --ef-selection: #5a54a8;
+
+  --ef-shadow-1: 0 1px 0 rgba(0, 0, 0, 0.18);
+  --ef-shadow-2: 0 14px 28px -20px rgba(0, 0, 0, 0.7);
+  --ef-shadow-lift: 0 26px 36px -16px rgba(0, 0, 0, 0.7), 0 2px 0 rgba(0, 0, 0, 0.1);
+
+  /* The brand mark: brass leaf, dark eye. */
+  --bg: #303752;
+  --fg: #f1eff7;
+  --accent: #d9b27a;
+
+  color-scheme: dark;
+}
+
+/* The primary buttons are brass, as in the tool sites. */
+.send, .btn, .tc-open { background: linear-gradient(180deg, #f0d2a4, #d3a96e); color: #1b1408; border-color: rgba(255, 255, 255, 0.18); }
+.send:hover, .btn:hover, .tc-open:hover { background: linear-gradient(180deg, #f7dcb4, #dcb57b); }
+.stop { background: var(--ef-ink); color: var(--ef-on-ink); }
+.app-frame { background: var(--ef-wall); }
+
+/* The box you type in is the thing to look at: a lighter plate than the page, a brass edge, a soft glow, more room and a
+   bigger send button. On focus the edge and the glow get stronger. */
+.composer {
+  padding: 14px 14px 14px var(--ef-s5);
+  background: #3d4668; border: 1.5px solid #d9b27a;
+  box-shadow: 0 0 0 4px rgba(217, 178, 122, 0.12), 0 22px 44px -18px rgba(0, 0, 0, 0.75);
+}
+.composer:focus-within { border-color: #f0d2a4; box-shadow: 0 0 0 5px rgba(217, 178, 122, 0.28), 0 22px 44px -18px rgba(0, 0, 0, 0.75); }
+.composer textarea { min-height: 56px; padding: 15px 0; font-size: 1.125rem; }
+.composer textarea::placeholder { color: #c9cde0; }
+.send { width: 48px; height: 48px; border-radius: 14px; }
+.send:disabled { opacity: 0.6; }
+.dock { padding-bottom: max(var(--ef-s5), env(safe-area-inset-bottom)); }
+@media (max-width: 600px) { .composer { padding: 10px 10px 10px var(--ef-s4); } .composer textarea { font-size: 1rem; min-height: 48px; padding: 12px 0; } .send { width: 44px; height: 44px; } }
