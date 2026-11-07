@@ -72,8 +72,13 @@ export let name = 'Elffuss Engine · WebGPU';
 //     de cargar LFM3 no se distingue de uno puesto aquí: para fijarlo en todos
 //     los modelos, ponerlo antes de cargar.
 //   · Interruptor de corte: `__ELFFUSS_RAPIDO === false` no pone ninguno.
+//   · TOPK_GPU (7-nov): los candidatos del muestreo se eligen en la tarjeta y se
+//     leen solo esos, no el vector entero de logits por token. Medido con el
+//     muestreo de producción, mismo texto: ×1,09 escribiendo en Q8_0 y en Q4_0.
+//     Si su kernel falla en un dispositivo, el turno sigue por el camino de
+//     siempre y se apaga para ese modelo (ver el bucle de `chat()`).
 export const RAPIDO_LFM3 = Object.freeze(['__ELFFUSS_GEMV2', '__ELFFUSS_GEMM2', '__ELFFUSS_GEMM2_COLA',
-  '__ELFFUSS_FLASH', '__ELFFUSS_FUSION', '__ELFFUSS_REPACK']);
+  '__ELFFUSS_FLASH', '__ELFFUSS_FUSION', '__ELFFUSS_REPACK', '__ELFFUSS_TOPK_GPU']);
 const puestosRapido = new Set();
 export function aplicaRapido(arch, g = globalThis) {
   for (const k of puestosRapido) if (g[k] === true) delete g[k];
