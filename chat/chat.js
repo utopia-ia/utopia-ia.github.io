@@ -11,6 +11,10 @@
 // own storage in this browser, reached through Claw's bridge page (bridge.js). The memory is the one memory every
 // Elffuss app shares, kept only in this browser by its store page (memory-wire.js): each turn gets only the facts
 // relevant to it, within a budget set by the model's context, and nothing is saved unless the user said it.
+//
+// It also makes pictures, music, speech and video with the elffuss-ai SDK (media-tools.js, the SDK copied by pin into
+// /vendor/elffuss-ai/): the chat model leaves the graphics card to the task while it runs and comes back after. What
+// the user attaches (documents, photos, videos) is read here (attach.js) and never leaves the device.
 
 import * as store from './store.js';
 import { render } from './md.js';
@@ -23,6 +27,9 @@ import * as web from './web.js';
 import * as appview from './appview.js';
 import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
 import { parseToolCall, writingTool, systemPrompt, contextBlock, withContext, CONTEXT_LABEL } from './tools.js';
+import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes } from './media-tools.js';
+import { needsMediaTools, hasMediaIn } from './media-intent.js';
+import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, startRecording, toMono16k, keepVoiceNote } from './attach.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -147,6 +154,18 @@ const T = {
     webRead: 'Read the page',
     webSentSearch: 'Only these search words left this device, to DuckDuckGo.',
     webSentUrl: 'Only this address left this device, to read the page.',
+    webSentRead: (n) => `Only these search words left this device, to DuckDuckGo, and the ${n === 1 ? 'address of the page' : n + ' addresses of the pages'} it read to answer.`,
+    webSentSite: (n) => `Only the search words and ${n === 1 ? 'this address' : 'these ' + n + ' addresses'} left this device, to read that site (its robots.txt included).`,
+    webSentList: 'What left this device',
+    webSent: ({ engine, ddg, pages, site }) => {
+      const to = engine && ddg ? 'to the Elffuss search server, which asks several search engines, and, as a fallback, to DuckDuckGo'
+        : engine ? 'to the Elffuss search server, which asks several search engines' : ddg ? 'to DuckDuckGo' : '';
+      const words = to ? `the search words, ${to}` : (site ? 'the search words' : '');
+      const addr = pages ? `${pages === 1 ? 'one address' : pages + ' addresses'} to read ${site ? 'that site (its robots.txt included)' : 'the pages that answer'}` : '';
+      return `Only this left this device: ${[words, addr].filter(Boolean).join('; and ')}.`;
+    },
+    webSiteSearching: 'Searching the site…',
+    webSiteSearched: 'Searched the site',
     appNone: 'No apps yet.',
     appsDown: 'Your apps are not available right now: Claw’s storage does not answer.',
     toolFailed: 'The tool did not work',
@@ -164,10 +183,40 @@ const T = {
     forgetFailed: 'I could not forget what I learnt here, so the chat is still here. Try again in a moment.',
     listKept: '(The list was shown to the user. Call memory.list again if you need it.)',
     anythingElse: 'Anything else?',
+    webClose: 'This is what I found; you can read it in these sources:',
     cutTool: 'The model ran out of room before it finished. Ask again, perhaps for something smaller.',
     appError: (m) => `The app hit an error: ${m}`,
     fixIt: 'Ask to fix it',
     fixAsk: (name, m) => `The app “${name}” shows this error: ${m}. Fix it.`,
+    // Media tools and attachments
+    mediaMaking: { image: 'Making a picture', audio: 'Making the audio', video: 'Making a video' },
+    mediaKind: { image: 'Picture', audio: 'Audio', video: 'Video', doc: 'Document' },
+    mediaStop: 'Stop',
+    mediaDownload: 'Download',
+    mediaGone: 'No longer in this browser.',
+    mediaCannot: 'Not on this device',
+    mediaDenied: 'Nothing was downloaded, so nothing was made.',
+    mediaHere: 'Made on this device. Kept in this browser.',
+    mgTitle: { image: 'Download the picture model?', audio: 'Download the audio model?', video: 'Download the video model?', voice: 'Download the voice model?' },
+    mgBody: 'It runs on this device, so nothing you ask for leaves it. The model is downloaded once and kept in this browser for every Elffuss app. While it works, the chat model steps aside and comes back after.',
+    mgBtn: (size) => `Download ${size} and make it`,
+    mgNo: 'Not now',
+    attach: 'Attach',
+    attReading: 'Reading…',
+    attFailed: 'This file could not be read here.',
+    attUnsupported: 'This kind of file cannot be attached.',
+    attRemove: (n) => `Remove ${n}`,
+    docPages: (n) => (n === 1 ? '1 page' : `${n} pages`),
+    docChars: (n) => `${new Intl.NumberFormat('en-US').format(n)} characters`,
+    docCut: (n) => `the model reads the first ${new Intl.NumberFormat('en-US').format(n)}`,
+    attached: 'Here is what I attached.',
+    recording: (s) => `Recording · ${s}`,
+    recHint: 'Tap the microphone to send, or release it if you are holding it',
+    recCancel: 'Discard the voice note',
+    transcribing: 'Writing down your voice note…',
+    voiceEmpty: 'Nothing could be heard in the voice note.',
+    voiceNote: 'Voice note',
+    micDenied: 'The microphone is not available: this browser did not allow it.',
   },
   es: {
     title: 'Elffuss · Chatea con una IA que corre en tu navegador',
@@ -260,6 +309,18 @@ const T = {
     webRead: 'Página leída',
     webSentSearch: 'Solo estas palabras han salido de este dispositivo, hacia DuckDuckGo.',
     webSentUrl: 'Solo esta dirección ha salido de este dispositivo, para leer la página.',
+    webSentRead: (n) => `Solo estas palabras han salido de este dispositivo, hacia DuckDuckGo, y ${n === 1 ? 'la dirección de la página que se leyó' : 'las direcciones de las ' + n + ' páginas que se leyeron'} para responder.`,
+    webSentSite: (n) => `Solo las palabras de la búsqueda y ${n === 1 ? 'esta dirección han' : 'estas ' + n + ' direcciones han'} salido de este dispositivo, para leer esa web (con su robots.txt).`,
+    webSentList: 'Lo que ha salido de este dispositivo',
+    webSent: ({ engine, ddg, pages, site }) => {
+      const to = engine && ddg ? 'a nuestro propio buscador (Elffuss), que pregunta a varios buscadores, y como respaldo a DuckDuckGo'
+        : engine ? 'a nuestro propio buscador (Elffuss), que pregunta a varios buscadores' : ddg ? 'a DuckDuckGo' : '';
+      const words = to ? `las palabras de la búsqueda, ${to}` : (site ? 'las palabras de la búsqueda' : '');
+      const addr = pages ? `${pages === 1 ? 'una dirección' : pages + ' direcciones'} para leer ${site ? 'esa web (con su robots.txt)' : 'las páginas que responden'}` : '';
+      return `Solo ha salido de este dispositivo: ${[words, addr].filter(Boolean).join('; y ')}.`;
+    },
+    webSiteSearching: 'Buscando en la web…',
+    webSiteSearched: 'Búsqueda dentro de la web',
     appNone: 'Aún no hay apps.',
     appsDown: 'Tus apps no están disponibles ahora: el almacén de Claw no responde.',
     toolFailed: 'La herramienta no ha funcionado',
@@ -277,10 +338,39 @@ const T = {
     forgetFailed: 'No he podido olvidar lo que aprendí aquí, así que el chat sigue aquí. Inténtalo dentro de un momento.',
     listKept: '(La lista se le mostró al usuario. Vuelve a llamar a memory.list si la necesitas.)',
     anythingElse: '¿Algo más?',
+    webClose: 'Esto es lo que he encontrado; puedes leerlo en estas fuentes:',
     cutTool: 'El modelo se quedó sin margen antes de terminar. Pídelo otra vez, quizá algo más pequeño.',
     appError: (m) => `La app ha dado un error: ${m}`,
     fixIt: 'Pedir que lo arregle',
     fixAsk: (name, m) => `La app «${name}» da este error: ${m}. Arréglalo.`,
+    mediaMaking: { image: 'Haciendo una imagen', audio: 'Haciendo el audio', video: 'Haciendo un vídeo' },
+    mediaKind: { image: 'Imagen', audio: 'Audio', video: 'Vídeo', doc: 'Documento' },
+    mediaStop: 'Parar',
+    mediaDownload: 'Descargar',
+    mediaGone: 'Ya no está en este navegador.',
+    mediaCannot: 'No en este dispositivo',
+    mediaDenied: 'No se ha descargado nada, así que no se ha hecho.',
+    mediaHere: 'Hecho en este dispositivo. Guardado en este navegador.',
+    mgTitle: { image: '¿Descargar el modelo de imágenes?', audio: '¿Descargar el modelo de audio?', video: '¿Descargar el modelo de vídeo?', voice: '¿Descargar el modelo de voz?' },
+    mgBody: 'Corre en este dispositivo, así que lo que pides no sale de él. El modelo se descarga una vez y queda en este navegador para todas las apps de Elffuss. Mientras trabaja, el modelo del chat se aparta y vuelve después.',
+    mgBtn: (size) => `Descargar ${size} y hacerlo`,
+    mgNo: 'Ahora no',
+    attach: 'Adjuntar',
+    attReading: 'Leyendo…',
+    attFailed: 'No se ha podido leer este archivo aquí.',
+    attUnsupported: 'Este tipo de archivo no se puede adjuntar.',
+    attRemove: (n) => `Quitar ${n}`,
+    docPages: (n) => (n === 1 ? '1 página' : `${n} páginas`),
+    docChars: (n) => `${new Intl.NumberFormat('es-ES').format(n)} caracteres`,
+    docCut: (n) => `el modelo lee los primeros ${new Intl.NumberFormat('es-ES').format(n)}`,
+    attached: 'Te adjunto esto.',
+    recording: (s) => `Grabando · ${s}`,
+    recHint: 'Toca el micrófono para enviar, o suéltalo si lo mantienes pulsado',
+    recCancel: 'Descartar la nota de voz',
+    transcribing: 'Escribiendo tu nota de voz…',
+    voiceEmpty: 'No se ha oído nada en la nota de voz.',
+    voiceNote: 'Nota de voz',
+    micDenied: 'El micrófono no está disponible: este navegador no lo ha permitido.',
   },
 };
 // The public copy (mirror.js) keeps memory and apps in this browser and has no web search: its own words.
@@ -519,6 +609,7 @@ function confirmDelete(li, c) {
       }
     }
     await store.remove(c.id);
+    removeChatMedia(c.id).catch(() => {});
     if (chat && chat.id === c.id) startNew();
     paintList();
   });
@@ -564,7 +655,7 @@ async function openChat(id) {
   ui.thread.textContent = '';
   for (const m of c.messages) {
     if (m.meta === 'result') continue;           // what a tool answered the model: shown by its card, not as a bubble
-    if (m.role === 'user') appendUser(m.content);
+    if (m.role === 'user') appendUser(m.content, m.attach);
     else { const li = appendBot(); paintBot(li, m); paintMemCard(li, m); }
   }
   ui.main.classList.toggle('is-empty', c.messages.length === 0);
@@ -582,14 +673,54 @@ async function save() {
 function nearEnd() { const s = ui.scroller; return s.scrollHeight - s.scrollTop - s.clientHeight < 120; }
 function scrollEnd(force) { if (force || nearEnd()) ui.scroller.scrollTop = ui.scroller.scrollHeight; }
 
-function appendUser(text) {
+function appendUser(text, attach = null) {
   const li = document.createElement('li');
   li.className = 'msg msg-user';
-  const b = document.createElement('div');
-  b.className = 'bubble'; b.textContent = text;
-  li.append(b);
+  if (attach?.length) {
+    const box = el('div', 'att-sent');
+    for (const a of attach) box.append(attachmentCard(a));
+    li.append(box);
+  }
+  if (text) {
+    const b = document.createElement('div');
+    b.className = 'bubble'; b.textContent = text;
+    li.append(b);
+  }
   ui.thread.append(li);
   return li;
+}
+
+// An attachment as it shows in the user's message: the photo, the video or the voice note itself, or a document's
+// card (name, pages, how much the model reads), each with its id, which is how the model refers to it.
+function attachmentCard(a) {
+  const card = el('div', 'att-card att-' + a.kind);
+  card.dataset.media = a.id;
+  if (a.kind === 'doc') {
+    card.insertAdjacentHTML('afterbegin', svg('i-doc', 'ic att-ic'));
+    const body = el('div', 'att-body');
+    body.append(el('b', 'att-name', a.name));
+    const facts = [a.meta?.pages ? t('docPages', a.meta.pages) : null, a.meta?.chars != null ? t('docChars', a.meta.chars) : null,
+      a.meta?.truncated ? t('docCut', a.meta.read || 0) : null].filter(Boolean).join(' · ');
+    if (facts) body.append(el('span', 'att-line', facts));
+    body.append(el('span', 'att-id', a.id));
+    card.append(body);
+    return card;
+  }
+  const holder = mediaElement(a.kind, a.id, a.name);
+  if (a.source === 'voice') card.append(el('span', 'att-line', t('voiceNote') + (a.meta?.seconds ? ` · ${clockOf(a.meta.seconds)}` : '')));
+  card.append(holder, el('span', 'att-id', a.id));
+  return card;
+}
+
+const clockOf = (sec) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+
+// The <img>, <audio> or <video> of a stored media item, filled once its bytes are read from this browser.
+function mediaElement(kind, id, label = '') {
+  const node = kind === 'image' ? document.createElement('img') : document.createElement(kind === 'audio' ? 'audio' : 'video');
+  node.className = 'media-el';
+  if (kind === 'image') { node.alt = label || id; node.decoding = 'async'; } else { node.controls = true; node.preload = 'metadata'; if (kind === 'video') node.playsInline = true; }
+  mediaUrl(id).then((u) => { if (u) node.src = u; else node.replaceWith(el('span', 'tc-line', t('mediaGone'))); }).catch(() => {});
+  return node;
 }
 
 function appendBot() {
@@ -683,6 +814,7 @@ function el(tag, cls, text) {
   if (text != null) e.textContent = text;
   return e;
 }
+const hostOf = (u) => { try { return new URL(u).host; } catch { try { return new URL('https://' + u).host; } catch { return String(u || ''); } } };
 function clawLink(href, label) {
   const a = el('a', 'tc-link');
   a.href = href; a.target = '_blank'; a.rel = 'noopener';
@@ -779,14 +911,17 @@ function paintCard(li, m) {
     if (r.down || r.error) card.classList.add('is-error');
     return;
   }
-  if (c.tool === 'web.search' || c.tool === 'web.fetch') {
-    const search = c.tool === 'web.search';
+  if (c.tool === 'web.search' || c.tool === 'web.fetch' || c.tool === 'web.site') {
+    const search = c.tool === 'web.search', inSite = c.tool === 'web.site';
     card.classList.add('card-list', 'card-web');
     card.insertAdjacentHTML('afterbegin', svg('i-external', 'ic tc-ic'));
-    body.append(el('span', 'tc-kicker', r.pending ? (search ? t('webSearching') : t('webReading')) : r.error ? t('toolFailed') : search ? t('webSearched') : t('webRead')));
-    body.append(el('b', 'tc-title', search ? (r.query || c.query || '') : (r.url || c.url || '')));
+    const kicker = r.pending ? (inSite ? t('webSiteSearching') : search ? t('webSearching') : t('webReading'))
+      : r.error ? t('toolFailed') : inSite ? t('webSiteSearched') : search ? t('webSearched') : t('webRead');
+    body.append(el('span', 'tc-kicker', kicker));
+    const title = inSite ? `${hostOf(r.site || c.url || '')} · ${r.query || c.query || ''}` : search ? (r.query || c.query || '') : (r.url || c.url || '');
+    body.append(el('b', 'tc-title', title));
     if (r.error) body.append(el('span', 'tc-line', r.error));
-    else if (!r.pending && search) {
+    else if (!r.pending && (search || inSite)) {
       const items = r.items || [];
       const ul = el('ul', 'tc-items');
       for (const it of items.slice(0, 8)) {
@@ -798,11 +933,34 @@ function paintCard(li, m) {
       }
       if (items.length) body.append(ul);
     }
-    if (!r.pending && !r.error) body.append(el('span', 'tc-line', search ? t('webSentSearch') : t('webSentUrl')));
+    // What left the device, said exactly: the search words, and every address the proxy was asked for (robots.txt,
+    // the site's search, the pages read). A chat saved before this change has no `sent` and keeps its old line.
+    if (!r.pending && !r.error) {
+      const sent = Array.isArray(r.sent) ? r.sent : null;
+      const isDdg = (u) => /^https:\/\/(html|lite)\.duckduckgo\.com\//.test(u);
+      const isEngine = (u) => /^https:\/\/[^/]+\/websearch\?/.test(u) && u.startsWith(location.origin);
+      const pages = sent ? sent.filter((u) => !isDdg(u) && !isEngine(u)) : [];
+      // A chat saved before /websearch keeps the lines it was shown with.
+      const line = sent && (sent.some(isEngine) || inSite)
+        ? t('webSent', { engine: sent.some(isEngine), ddg: sent.some(isDdg), pages: pages.length, site: inSite })
+        : inSite && sent ? t('webSentSite', pages.length)
+        : search && pages.length ? t('webSentRead', pages.length)
+        : search ? t('webSentSearch') : t('webSentUrl');
+      body.append(el('span', 'tc-line', line));
+      if (sent && sent.length > 1) {
+        const d = el('details', 'tc-sent');
+        d.append(el('summary', null, `${t('webSentList')} (${sent.length})`));
+        const ul = el('ul', 'tc-items');
+        for (const u of sent) ul.append(el('li', 'tc-url', u));
+        d.append(ul);
+        body.append(d);
+      }
+    }
     card.append(body);
     if (r.error) card.classList.add('is-error');
     return;
   }
+  if (isMediaTool(c.tool)) { paintMediaCard(li, card, body, m, r, c); return; }
   // Any other tool name: the model asked for something this chat does not have.
   card.classList.add('is-error');
   body.append(el('span', 'tc-kicker', t('toolFailed')), el('span', 'tc-line', r.error || c.tool || ''));
@@ -909,6 +1067,24 @@ const ASKS_EDIT = /\b(change|make (it|the)|add|remove|update|fix|edit|bigger|sma
 // title, a heading, a paragraph. When no app was asked for and nothing in the page runs, styles or takes input, it
 // is not an app: it is shown as the text it says.
 const inertHtml = (h) => h.length < 4000 && !/<(script|style|input|button|select|textarea|canvas|svg|form|iframe|link)\b|\son\w+\s*=|style\s*=/i.test(h);
+// Prose around the ```html block (not just a line before it): the model is explaining, the block is an example.
+function explainsCode(text) {
+  const outside = String(text).replace(/```html[\s\S]*?(```|$)/gi, ' ').replace(/[#*_`>|\-\s]+/g, ' ').trim();
+  return outside.length > 120;
+}
+
+// The model must not be able to write the context's own blocks into its answer (measured: LFM3 closed an answer
+// with a made-up <memoria> fact). They are removed from what is shown and kept, closed or cut off.
+const ECHO = /<(memoria|memory|contexto|context)\b[^>]*>[\s\S]*?(<\/\1\s*>|$)/gi;
+const stripEcho = (s) => String(s || '').replace(ECHO, '').replace(/\n{3,}/g, '\n\n').trim();
+
+// The close of a turn that ended on web results: one sentence in the chat's language and up to five sources.
+function webClose(sources) {
+  if (!sources.length) return t('anythingElse');
+  const md = (s) => s.replace(/[[\]]/g, '').slice(0, 120);
+  return t('webClose') + '\n' + sources.slice(0, 5).map((s) => `- [${md(s.title)}](${s.url})`).join('\n');
+}
+
 function htmlText(h) {
   const body = new DOMParser().parseFromString(h, 'text/html').body;
   const parts = [];
@@ -930,6 +1106,12 @@ function callSummary(call) {
   if (a.id != null) s.id = String(a.id).slice(0, 40);
   if (a.query != null) s.query = String(a.query).slice(0, 300);
   if (a.url != null) s.url = String(a.url).slice(0, 500);
+  else if (a.site != null) s.url = String(a.site).slice(0, 500);
+  if (isMediaTool(call.tool)) {
+    if (a.prompt != null) s.prompt = String(a.prompt).slice(0, 300);
+    if (a.text != null) s.text = String(a.text).slice(0, 300);
+    if (a.image != null) s.image = String(a.image).slice(0, 40);
+  }
   return s;
 }
 
@@ -1030,8 +1212,9 @@ async function runTool(call, ctx) {
       const query = String(a.query ?? a.q ?? a.text ?? '').trim().slice(0, 300);
       ctx.summary.query = query;
       try {
-        const r = await web.search(query, { es, signal: ctx.signal });
-        return { text: r.text, result: { query, items: r.items } };
+        // The question ranks the passages of the pages read, here on the device; it is not sent anywhere.
+        const r = await web.search(query, { es, signal: ctx.signal, question: ctx.userText });
+        return { text: r.text, result: { query, items: r.items, sent: r.sent } };
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
         return { text: 'ERROR: ' + (e?.message || e), result: { query, error: String(e?.message || e) } };
@@ -1042,16 +1225,156 @@ async function runTool(call, ctx) {
       const url = String(a.url ?? '').trim();
       ctx.summary.url = url;
       try {
-        const r = await web.fetchPage(url, { es, signal: ctx.signal });
-        return { text: r.text, result: { url, title: r.title } };
+        const r = await web.fetchPage(url, { es, signal: ctx.signal, question: [a.question, ctx.userText].filter(Boolean).join(' ') });
+        return { text: r.text, result: { url, title: r.title, sent: r.sent } };
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
         return { text: 'ERROR: ' + (e?.message || e), result: { url, error: String(e?.message || e) } };
       }
     }
+    case 'web.site': {
+      if (mirror) return fail(t('webOff'));
+      const site = String(a.url ?? a.site ?? a.domain ?? '').trim().slice(0, 500);
+      const query = String(a.query ?? a.q ?? a.text ?? a.search ?? '').trim().slice(0, 300);
+      ctx.summary.url = site; ctx.summary.query = query;
+      try {
+        const r = await web.siteSearch(site, query, { es, signal: ctx.signal, question: ctx.userText });
+        return { text: r.text, result: { site: r.site, query, items: r.items, sent: r.sent, via: r.via } };
+      } catch (e) {
+        if (ctx.signal?.aborted) throw e;
+        return { text: 'ERROR: ' + (e?.message || e), result: { site, query, error: String(e?.message || e) } };
+      }
+    }
     default:
+      if (isMediaTool(call.tool) && !mirror) return runMedia(call, ctx);
       return fail(es ? `Herramienta desconocida: ${call.tool}` : `Unknown tool: ${call.tool}`);
   }
+}
+
+// ---------- Media tools ----------
+// The SDK copy is this site's /vendor/elffuss-ai/ (ai-sync.mjs). One media task at a time; while it runs the chat
+// model is unloaded (its graphics memory goes to the task: a phone tab has about 2 GB), and it is loaded again after.
+const AI_BASE = new URL('../vendor/elffuss-ai/', import.meta.url);
+let mediaUi = null;                  // { li, signal } of the step running a media tool: where its question goes
+const media = createMediaTools({
+  base: AI_BASE,
+  lang: () => lang,
+  unloadLlm,
+  reloadLlm: () => (device.ok ? loadEngine() : null),
+  consent: (q) => (mediaUi ? untilStopped(mediaGate(mediaUi.li, q, mediaUi.signal), mediaUi.signal) : Promise.resolve(false)),
+});
+
+// Lets the model go from the graphics card, as a hidden tab does (watchHidden), and waits until it is gone.
+async function unloadLlm() {
+  if (releasing) { await releasing; return; }
+  if (!loading) return;
+  try { await loading; } catch { return; }
+  loading = null;
+  releasing = (engine?.unload?.() || Promise.resolve()).catch(() => {}).finally(() => { releasing = null; });
+  await releasing;
+  setModelState('cached');
+}
+
+async function runMedia(call, ctx) {
+  mediaUi = { li: ctx.li, signal: ctx.signal };
+  try {
+    const r = await media.run(call, { signal: ctx.signal, chat: chat?.id || null, lang, onProgress: ctx.progress });
+    for (const k of ['prompt', 'text', 'image']) if (r.result?.[k] != null) ctx.summary[k] = r.result[k];
+    return r;
+  } finally { mediaUi = null; }
+}
+
+// The download question of a media model, the chat's own download plate: what, how much, and two buttons.
+function mediaGate(li, q, signal) {
+  return new Promise((resolve, reject) => {
+    const box = el('div', 'gate media-gate');
+    box.setAttribute('role', 'group');
+    const paint = () => {
+      box.textContent = '';
+      const h = el('h2', null, t('mgTitle')[q.kind] || t('mgTitle').image);
+      const p = el('p', null, t('mgBody'));
+      const size = el('p', 'size');
+      size.append(el('b', null, formatBytes(q.bytes, lang)), el('span', null, t('bytes', num(q.bytes))));
+      const yes = el('button', 'btn'); yes.type = 'button'; yes.dataset.mediaYes = '';
+      yes.innerHTML = svg('i-down');
+      yes.append(document.createTextNode(q.kind === 'voice' ? t('gateBtn', formatBytes(q.bytes, lang)) : t('mgBtn', formatBytes(q.bytes, lang))));
+      const no = el('button', 'mini-btn ask-no', t('mgNo')); no.type = 'button'; no.dataset.mediaNo = '';
+      yes.addEventListener('click', () => finish(true), { once: true });
+      no.addEventListener('click', () => finish(false), { once: true });
+      const row = el('div', 'ask-row'); row.append(yes, no);
+      box.append(h, p, size, row);
+      box.setAttribute('aria-label', h.textContent);
+    };
+    const finish = (ok) => { repaints.delete(paint); box.remove(); resolve(ok); };
+    live(paint);
+    li.append(box);
+    scrollEnd(true);
+    box.querySelector('.btn').focus({ preventScroll: true });
+    signal?.addEventListener('abort', () => { repaints.delete(paint); box.remove(); reject(Object.assign(new Error('stopped'), { name: 'AbortError' })); }, { once: true });
+  });
+}
+
+// The progress of a media task, painted into its card without repainting the rest of it.
+function paintMediaProgress(li, p) {
+  const card = li.querySelector('.tool-card.card-media');
+  if (!card) return;
+  const line = card.querySelector('.tc-progress');
+  const meter = card.querySelector('.meter');
+  if (line) line.textContent = p.text;
+  if (meter) {
+    meter.classList.toggle('is-busy', p.pct == null);
+    meter.querySelector('i').style.width = (p.pct ?? 0) + '%';
+    if (p.pct == null) meter.removeAttribute('aria-valuenow'); else meter.setAttribute('aria-valuenow', String(p.pct));
+  }
+}
+
+function paintMediaCard(li, card, body, m, r, c) {
+  const kind = mediaKindOf(c.tool) || 'image';
+  card.classList.add('card-media');
+  card.insertAdjacentHTML('afterbegin', svg(kind === 'image' ? 'i-image' : kind === 'audio' ? 'i-audio' : 'i-video', 'ic tc-ic'));
+  const what = c.prompt || c.text || '';
+  if (r.pending) {
+    body.append(el('span', 'tc-kicker', t('mediaMaking')[kind]));
+    if (what) body.append(el('b', 'tc-title', what));
+    const line = el('span', 'tc-line tc-progress', m.live?.text || '');
+    line.setAttribute('aria-live', 'polite');
+    const meter = el('div', 'meter is-busy');
+    meter.setAttribute('role', 'progressbar'); meter.setAttribute('aria-valuemin', '0'); meter.setAttribute('aria-valuemax', '100');
+    meter.append(el('i'));
+    body.append(line, meter);
+    card.append(body);
+    const acts = el('div', 'tc-actions');
+    const stop = el('button', 'mini-btn', t('mediaStop')); stop.type = 'button'; stop.dataset.mediaStop = '';
+    stop.addEventListener('click', () => stopTurn());
+    acts.append(stop);
+    card.append(acts);
+    if (m.live) paintMediaProgress(li, m.live);
+    return;
+  }
+  if (r.media) {
+    body.append(el('span', 'tc-kicker', `${t('mediaKind')[r.media.kind] || ''} · ${r.media.id}`));
+    if (what) body.append(el('b', 'tc-title', what));
+    body.append(el('span', 'tc-line', t('mediaHere')));
+    card.append(body);
+    const acts = el('div', 'tc-actions');
+    const a = el('a', 'mini-btn tc-download');
+    a.innerHTML = svg('i-down');
+    a.append(document.createTextNode(t('mediaDownload')));
+    a.download = downloadName(r.media);
+    acts.append(a);
+    card.append(acts);
+    const fig = el('figure', 'tc-media');
+    fig.append(mediaElement(r.media.kind, r.media.id, what));
+    card.append(fig);
+    card.dataset.media = r.media.id;
+    mediaUrl(r.media.id).then((u) => { if (u) a.href = u; else a.remove(); }).catch(() => {});
+    return;
+  }
+  card.classList.add('is-error');
+  body.append(el('span', 'tc-kicker', r.cannot ? t('mediaCannot') : t('toolFailed')));
+  if (what) body.append(el('b', 'tc-title', what));
+  body.append(el('span', 'tc-line', r.denied ? t('mediaDenied') : (r.error || '')));
+  card.append(body);
 }
 
 // The live state for the model, read from Claw's storage on every step, as Claw's snapshot() does: the apps and the
@@ -1073,8 +1396,10 @@ function modelHistory(c, live = null) {
   c.messages.forEach((m, i) => { if (m.call?.tool === 'app.create' && m.call.name) latest.set(m.call.name, i); });
   const out = [];
   c.messages.forEach((m, i) => {
-    if (!m.content || !m.content.trim()) return;
+    if ((!m.content || !m.content.trim()) && !m.context) return;
     let content = live?.get(m) ?? m.content;
+    // What the user attached: the documents' text and the media ids, read with the message, never shown in its bubble.
+    if (m.context) content = content && content.trim() ? `${m.context}\n\n${content}` : `${m.context}\n\n${t('attached')}`;
     if (m.meta === 'result' && !live?.has(m) && content.startsWith(LIST_RESULT)) content = `${LIST_RESULT}\n${t('listKept')}`;
     if (m.call?.tool === 'app.create' && latest.get(m.call.name) !== i) {
       content = '```tool\n' + JSON.stringify({ tool: 'app.create', args: { name: m.call.name, html: '(an earlier version, replaced later)' } }) + '\n```';
@@ -1451,7 +1776,7 @@ function showError(li, e, retry) {
 function setBusy(on, generating = false) {
   ui.send.hidden = generating;
   ui.stop.hidden = !generating;
-  ui.send.disabled = on || !ui.input.value.trim();
+  ui.send.disabled = on || !canSend();
   if (generating) ui.stop.focus({ preventScroll: true });
 }
 
@@ -1472,19 +1797,26 @@ const split = (raw) => {
 // `typed`: the user wrote this in the box (not pasted or dropped, not a button's text, not over the typed limit). Only
 // typed messages can ground a memory: the store refuses a save whose fact is not in what the user typed.
 const TYPED_MAX = 1500;
-async function send(text, { typed = false } = {}) {
+async function send(text, { typed = false, attach = [] } = {}) {
   await detected;
   if (turn || !device.ok) return;
   if (!chat) {
-    chat = { id: newId(), title: titleOf(text), created: Date.now(), updated: Date.now(), messages: [] };
+    chat = { id: newId(), title: titleOf(text || attach.map((a) => a.name).join(', ')), created: Date.now(), updated: Date.now(), messages: [] };
     if (pendingIncognito) chat.incognito = true;
     pendingIncognito = false;
     try { localStorage.setItem(CURRENT, chat.id); } catch { /* — */ }
   }
-  chat.messages.push({ role: 'user', content: text, ...(typed && text.length <= TYPED_MAX ? { typed: true } : {}) });
+  // Attachments: what the card shows is kept with the message; what the model reads (a document's text, a photo's id)
+  // goes in `context`, never in the bubble.
+  const kept = attach.map((a) => ({ id: a.id, kind: a.kind, name: a.name, mime: a.mime, source: a.source,
+    meta: { ...(a.meta || {}), ...(a.kind === 'doc' ? { pages: a.pages, chars: a.chars, truncated: a.truncated, read: a.excerpt?.length || 0 } : {}) } }));
+  const context = attach.map((a) => (a.kind === 'doc' ? docContext(a, lang) : mediaContext(a, lang))).join('\n\n');
+  if (attach.length) setMediaChat(attach.map((a) => a.id), chat.id).catch(() => {});
+  chat.messages.push({ role: 'user', content: text, ...(typed && text.length <= TYPED_MAX ? { typed: true } : {}),
+    ...(kept.length ? { attach: kept, context } : {}) });
   await save();
   ui.main.classList.remove('is-empty');
-  appendUser(text);
+  appendUser(text, kept);
   paintList();
   const li = appendBot();
   scrollEnd(true);
@@ -1515,6 +1847,22 @@ function retryWithoutReasoning(li, mine, msg) {
 // in the thread, with its own reasoning.
 const MAX_STEPS = 5;
 
+// An address in what the user wrote is read before the model answers, as the turn's first step (a web.fetch card,
+// like any call): measured with LFM3, given «lee https://…» the small model searched instead of reading it, 4 times
+// out of 4. Not when they ask for an app or ask to remember or forget something: the address is then data, not a
+// page to read. The first address only; the model can read others.
+const URL_IN = /\bhttps?:\/\/[^\s<>"«»]+/i;
+function addressToRead(text) {
+  // The words around the address decide, not the address: «bsky.app» is no request for an app (measured).
+  const words = text.replace(new RegExp(URL_IN.source, 'gi'), ' ');
+  if (mirror || ASKS_APP.test(words) || /(^|[^\p{L}])(recuerda|acu[eé]rdate|olvida|remember|forget)(?![\p{L}])/iu.test(words)) return null;
+  const m = URL_IN.exec(text);
+  if (!m) return null;
+  const url = m[0].replace(/[.,;:!?)\]}'"]+$/, '');
+  try { new URL(url); } catch { return null; }
+  return { tool: 'web.fetch', args: { url }, forced: true };
+}
+
 async function runTurn(li, mine, ctl, reason) {
   setBusy(true);
   let msg = { role: 'assistant', content: '', thinking: '' };
@@ -1529,6 +1877,14 @@ async function runTurn(li, mine, ctl, reason) {
   // On the processor it answers straight away: a thousand tokens of reasoning are minutes before the first letter
   // there, and the engine keeps a shorter context on the processor, where the reasoning budget does not fit.
   if (device.cpu) reason = false;
+  // The media tools go in this turn's prompt only when it needs them (media-intent.js: an attachment, a media item
+  // named, or a request to make one), decided once, without the model. Otherwise the prompt is the one from before
+  // the media tools, byte for byte, and the engine reuses its prefix.
+  const lastUser = [...mine.messages].reverse().find((m) => m.role === 'user' && m.meta !== 'result');
+  const mediaTurn = !mirror && needsMediaTools(lastUser?.content || '', {
+    attachments: lastUser?.attach?.length || 0,
+    hasMedia: hasMediaIn(mine.messages.map((m) => `${m.context || ''}\n${m.content || ''}`).join('\n')),
+  }).media;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
   try {
@@ -1552,6 +1908,10 @@ async function runTurn(li, mine, ctl, reason) {
     const done = [];                 // signatures of the calls already run this turn (Claw's anti-loop)
     const liveResults = new Map();   // result message -> what the model reads in this turn only (memory.list)
     let lastText = '';
+    const webSources = [];           // pages the web tools brought this turn, for a turn that closes on them
+    let forced = addressToRead(userText);
+    const forcedSig = forced ? forced.tool + ':' + JSON.stringify(forced.args) : '';
+    let nudged = false;
     for (let step = 0; step < MAX_STEPS; step++) {
       if (step > 0) {
         li = appendBot();
@@ -1565,46 +1925,65 @@ async function runTurn(li, mine, ctl, reason) {
         if (mt?.block.unavailable) noteMemoryDown(li, mine);
         memPrompt = memory.promptPieces(lang);
       }
-      const now = await untilStopped(liveContext(), ctl.signal);
-      const history = withContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang) }), CONTEXT_LABEL[lang]);
-      let queued = false;
-      const paint = () => {
-        queued = false;
-        if (finished) return;              // a frame that arrives after the step ended must not repaint it as live
+      let call = null;
+      if (forced) {
+        // The address the user gave, read first (see addressToRead).
+        call = forced; forced = null;
+        finished = true;
+      } else {
+        const now = await untilStopped(liveContext(), ctl.signal);
+        const history = withContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang) }), CONTEXT_LABEL[lang]);
+        let queued = false;
+        const paint = () => {
+          queued = false;
+          if (finished) return;              // a frame that arrives after the step ended must not repaint it as live
+          const p = reason === false ? { thinking: '', content: raw } : split(raw);
+          msg.thinking = p.thinking; msg.content = stripEcho(p.content);
+          paintBot(li, msg, { writing: true, thinkingLive: !p.content });
+          scrollEnd();
+        };
+        // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it when it
+        // fits the history to the model's context: no `reserveTokens` on top, or it would be subtracted twice.
+        const result = await engine.chat(history, systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn }), (tok) => {
+          raw += tok;
+          if (!queued) { queued = true; requestAnimationFrame(paint); }
+        }, { signal: ctl.signal, onPrefill: (done, total) => { if (!finished && !raw) paintReading(li, done, total); } });
+        finished = true;
+        const med = engine.ultimaMedida?.();
+        if (med && med.genTokens > 0) {
+          msg.speed = { read: med.procesados || 0, readTokS: med.prefillTokS || 0, wrote: med.genTokens, wroteTokS: med.genTokS || 0, cached: med.reusados || 0 };
+        }
         const p = reason === false ? { thinking: '', content: raw } : split(raw);
-        msg.thinking = p.thinking; msg.content = p.content;
-        paintBot(li, msg, { writing: true, thinkingLive: !p.content });
-        scrollEnd();
-      };
-      // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it when it
-      // fits the history to the model's context: no `reserveTokens` on top, or it would be subtracted twice.
-      const result = await engine.chat(history, systemPrompt(lang, memPrompt, { web: !mirror }), (tok) => {
-        raw += tok;
-        if (!queued) { queued = true; requestAnimationFrame(paint); }
-      }, { signal: ctl.signal, onPrefill: (done, total) => { if (!finished && !raw) paintReading(li, done, total); } });
-      finished = true;
-      const med = engine.ultimaMedida?.();
-      if (med && med.genTokens > 0) {
-        msg.speed = { read: med.procesados || 0, readTokS: med.prefillTokS || 0, wrote: med.genTokens, wroteTokS: med.genTokS || 0, cached: med.reusados || 0 };
-      }
-      const p = reason === false ? { thinking: '', content: raw } : split(raw);
-      msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
-      msg.content = String(result || '').trim();
-      const call = msg.content ? parseToolCall(msg.content) : null;
-      if (call?.fromHtml && !ASKS_APP.test(userText) && inertHtml(String(call.args?.html || ''))) {
-        // What it wrote before the page, if anything, is the answer; if not, the page's own text.
-        const before = msg.content.split(/```html|<!doctype html|<html[\s>]/i)[0].trim();
-        msg.content = before || htmlText(String(call.args.html));
-        break;
-      }
-      if (!call) {
-        // A call the model did not finish (the budget ran out inside it) is not run and not shown as markup.
-        const wt = writingTool(msg.content);
-        if (wt) { msg.content = wt.before; msg.note = 'cutTool'; }
-        else if (!msg.content) msg.note = 'cut';
-        break;
+        msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
+        msg.content = stripEcho(String(result || '').trim());
+        call = msg.content ? parseToolCall(msg.content) : null;
+        if (call?.fromHtml && !ASKS_APP.test(userText) && inertHtml(String(call.args?.html || ''))) {
+          // What it wrote before the page, if anything, is the answer; if not, the page's own text.
+          const before = msg.content.split(/```html|<!doctype html|<html[\s>]/i)[0].trim();
+          msg.content = before || htmlText(String(call.args.html));
+          break;
+        }
+        if (call?.fromHtml && explainsCode(msg.content) && !ASKS_APP.test(userText) && !(panel.openName() && ASKS_EDIT.test(userText))) {
+          // An ```html block inside an explanation, and no app was asked for: it is an example to read, shown as
+          // code, not a page to build (measured: «how do I read a JSON file in Python» became a broken app).
+          break;
+        }
+        if (!call) {
+          // A call the model did not finish (the budget ran out inside it) is not run and not shown as markup.
+          const wt = writingTool(msg.content);
+          if (wt) { msg.content = wt.before; msg.note = 'cutTool'; }
+          else if (!msg.content) msg.note = 'cut';
+          break;
+        }
       }
       const sig = call.tool + ':' + JSON.stringify(call.args || {});
+      if (sig === forcedSig && !call.forced && !nudged) {
+        // The model asks for the page the chat already read for it: it is told so once, and answers from it.
+        nudged = true;
+        mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${lang === 'es' ? 'Esa página ya está leída arriba: responde con lo que dice.' : 'That page was already read above: answer from what it says.'}`, meta: 'result' });
+        li.remove();
+        continue;
+      }
       if (done.includes(sig)) {          // the same call again: close with what the last one said
         msg.content = lastText && !lastText.startsWith('ERROR') ? lastText : t('anythingElse');
         break;
@@ -1615,8 +1994,10 @@ async function runTurn(li, mine, ctl, reason) {
       msg.result = null;
       paintBot(li, msg);
       if (call.tool.startsWith('memory.')) freshCards.add(msg);
+      const stepMsg = msg, stepLi = li;
       const ctx = {
-        userText, summary: msg.call, memory: mt, signal: ctl.signal,
+        userText, summary: msg.call, memory: mt, signal: ctl.signal, li,
+        progress: (p) => { stepMsg.live = p; paintMediaProgress(stepLi, p); },
         ask: (scope, detail) => untilStopped(requirePerm(scope, detail, li, ctl.signal), ctl.signal),
         askMemory: (c) => untilStopped(askMemory(li, c, ctl.signal), ctl.signal),
       };
@@ -1624,9 +2005,17 @@ async function runTurn(li, mine, ctl, reason) {
       // Any tool that is not memory taints the turn: what it returned is not the user's word, so a save after it can
       // only become a proposal.
       mt?.tool(call.tool);
+      delete msg.live;
       msg.result = res.result;
       const listed = call.tool === 'memory.list';
       lastText = listed ? t('anythingElse') : (res.say ?? res.text);    // what the visitor may read if the turn closes on it
+      // A web result is a page's text for the model, never an answer for the visitor: if the turn closes on it
+      // (the model repeats the call, or runs out of steps), it closes with one sentence and the sources.
+      if (call.tool.startsWith('web.') && !res.result?.error) {
+        const found = res.result?.items?.length ? res.result.items : res.result?.url ? [{ title: res.result.title || res.result.url, url: res.result.url }] : [];
+        for (const it of found) if (it?.url && !webSources.some((x) => x.url === it.url)) webSources.push({ title: String(it.title || it.url), url: it.url });
+        lastText = webClose(webSources);
+      }
       paintBot(li, msg);
       scrollEnd();
       mine.messages.push(msg);
@@ -1650,7 +2039,8 @@ async function runTurn(li, mine, ctl, reason) {
         // Keep what was written before the stop, exactly as it was on screen.
         const p = reason === false ? { thinking: '', content: raw } : split(raw);
         msg.thinking = p.thinking; msg.content = p.content.trim();
-        if (msg.call) msg.result = msg.result || { error: t('stopped') };
+        if (msg.call) msg.result = msg.result || { ...msg.call, error: t('stopped') };
+        delete msg.live;
         msg.stopped = true;
         if (stage === 'gate') msg.note = 'noAnswer';
       }
@@ -1817,7 +2207,180 @@ function applyLang(value) {
 function autosize() {
   ui.input.style.height = 'auto';
   ui.input.style.height = Math.min(ui.input.scrollHeight, innerHeight * 0.4) + 'px';
-  ui.send.disabled = !!turn || !ui.input.value.trim();
+  ui.send.disabled = !!turn || !canSend();
+}
+const canSend = () => !!ui.input.value.trim() || (pending.length > 0 && pending.every((p) => p.rec));
+
+// ---------- Attachments (the «+» of the box) ----------
+// Document, Photo or video, and on a phone Camera: each file is read here at once (attach.js) and waits as a chip
+// above the box until the message goes. Nothing is uploaded.
+const pending = [];                  // { file, rec?, error?, li }
+function paintChips() {
+  const ul = $('att-chips');
+  ul.textContent = '';
+  ul.hidden = !pending.length;
+  if (typeof recChip !== 'undefined' && recChip.state) paintRecChip();
+  for (const p of pending) {
+    const li = el('li', 'att-chip' + (p.error ? ' is-error' : p.rec ? '' : ' is-reading'));
+    const kind = p.rec?.kind || kindOf(p.file) || 'doc';
+    li.insertAdjacentHTML('afterbegin', svg(kind === 'image' ? 'i-image' : kind === 'video' ? 'i-video' : kind === 'audio' ? 'i-audio' : 'i-doc'));
+    li.append(el('span', 'att-chip-name', p.file.name || p.rec?.name || ''));
+    li.append(el('span', 'att-chip-state', p.error ? p.error : p.rec ? p.rec.id : t('attReading')));
+    const x = el('button', 'att-chip-x'); x.type = 'button'; x.innerHTML = svg('i-close');
+    x.setAttribute('aria-label', t('attRemove', p.file.name || ''));
+    x.addEventListener('click', () => { pending.splice(pending.indexOf(p), 1); paintChips(); autosize(); });
+    li.append(x);
+    ul.append(li);
+  }
+}
+repaints.add(paintChips);
+
+async function addFiles(files) {
+  for (const file of files) {
+    const p = { file, rec: null, error: null };
+    pending.push(p);
+    paintChips();
+    if (!kindOf(file)) { p.error = t('attUnsupported'); paintChips(); continue; }
+    attachFile(file, { base: AI_BASE, chat: chat?.id || null })
+      .then((rec) => { p.rec = rec; }, (e) => { console.warn('[chat] attach', e); p.error = t('attFailed'); })
+      .finally(() => { paintChips(); autosize(); });
+  }
+  autosize();
+}
+
+// ---------- Voice notes (the microphone of the box) ----------
+// Hold it and release to send, as in WhatsApp, or tap it once to start and once more to send. The note is written down
+// here by Whisper (media.transcribe, with the chat's language set: Whisper without one writes English), shown as an
+// audio card, and its words go to the model as the user's message. Nothing leaves the device.
+let recording = null;                // { rec, timer, at, held }
+let voiceCtl = null;
+const recChip = { state: null, text: '' };   // 'rec' | 'busy' | 'error'
+function paintRecChip() {
+  const ul = $('att-chips');
+  ul.querySelector('.rec-chip')?.remove();
+  if (!recChip.state) { ul.hidden = !pending.length; return; }
+  const li = el('li', 'att-chip rec-chip' + (recChip.state === 'rec' ? ' is-rec' : recChip.state === 'error' ? ' is-error' : ' is-reading'));
+  li.insertAdjacentHTML('afterbegin', svg('i-mic'));
+  const txt = el('span', 'att-chip-name', recChip.text);
+  txt.setAttribute('aria-live', 'polite');
+  li.append(txt);
+  if (recChip.state !== 'busy') {
+    const x = el('button', 'att-chip-x'); x.type = 'button'; x.innerHTML = svg('i-close');
+    x.setAttribute('aria-label', t('recCancel'));
+    x.addEventListener('click', () => { if (recording) { recording.rec.cancel(); clearInterval(recording.timer); recording = null; setMic(false); } recChip.state = null; paintRecChip(); });
+    li.append(x);
+  }
+  ul.prepend(li);
+  ul.hidden = false;
+}
+function setMic(on) { const b = $('mic-btn'); b.classList.toggle('is-rec', on); b.setAttribute('aria-pressed', String(on)); b.title = on ? t('recHint') : b.getAttribute(`data-title-${lang}`); }
+const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+
+async function beginRecording() {
+  try {
+    const rec = await startRecording();
+    recording = { rec, at: performance.now(), held: true, timer: setInterval(() => { recChip.text = t('recording', clock(rec.seconds())); paintRecChip(); }, 500) };
+    recChip.state = 'rec'; recChip.text = t('recording', '0:00');
+    setMic(true); paintRecChip();
+  } catch (e) {
+    console.warn('[chat] microphone', e);
+    recChip.state = 'error'; recChip.text = t('micDenied'); paintRecChip();
+  }
+}
+
+async function finishRecording() {
+  const r = recording;
+  if (!r) return;
+  recording = null;
+  clearInterval(r.timer);
+  setMic(false);
+  const { blob, seconds } = await r.rec.stop();
+  if (seconds < 0.6 || !blob.size) { recChip.state = null; paintRecChip(); return; }
+  recChip.state = 'busy'; recChip.text = t('transcribing'); paintRecChip();
+  const ctl = new AbortController();
+  voiceCtl = ctl;
+  // Where the download question goes the first time: its own item in the thread, gone once answered.
+  const holder = el('li', 'msg msg-note');
+  ui.thread.append(holder);
+  ui.main.classList.remove('is-empty');
+  mediaUi = { li: holder, signal: ctl.signal };
+  try {
+    const samples = await toMono16k(blob);
+    const out = await media.transcribe(samples, { signal: ctl.signal, lang, language: lang, onProgress: (p) => { recChip.text = `${t('transcribing')} ${p.text && p.text !== t('transcribing') ? '· ' + p.text : ''}`.trim(); paintRecChip(); } });
+    if (out.text) {
+      const rec = await keepVoiceNote(blob, seconds, { chat: chat?.id || null, transcript: out.text });
+      recChip.state = null; paintRecChip();
+      send(out.text, { attach: [rec] });
+    } else if (out.reason === 'denied') { recChip.state = null; paintRecChip(); }
+    else { recChip.state = 'error'; recChip.text = out.error || t('voiceEmpty'); paintRecChip(); }
+  } catch (e) {
+    if (e?.name !== 'AbortError') { console.warn('[chat] voice note', e); recChip.state = 'error'; recChip.text = t('voiceEmpty'); paintRecChip(); }
+    else { recChip.state = null; paintRecChip(); }
+  } finally {
+    holder.remove();
+    mediaUi = null; voiceCtl = null;
+    if (chat === null || !chat.messages.length) ui.main.classList.toggle('is-empty', !ui.thread.children.length);
+  }
+}
+
+function wireMic() {
+  const mic = $('mic-btn');
+  if (!mic || mirror || !canRecord()) return;
+  mic.hidden = false;
+  // Pointer: press starts; a release after a hold sends; a quick tap leaves it recording until the next tap.
+  mic.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || voiceCtl) return;
+    if (recording) { finishRecording(); return; }
+    beginRecording();
+  });
+  mic.addEventListener('pointerup', () => {
+    if (!recording?.held) return;
+    recording.held = false;
+    if (performance.now() - recording.at >= 400) finishRecording();
+  });
+  // Keyboard (Enter or Space): a click with no pointer toggles.
+  mic.addEventListener('click', (e) => {
+    if (e.detail !== 0 || voiceCtl) return;
+    if (recording) finishRecording(); else beginRecording().then(() => { if (recording) recording.held = false; });
+  });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && recording) { recording.rec.cancel(); clearInterval(recording.timer); recording = null; setMic(false); recChip.state = null; paintRecChip(); } });
+}
+
+function wireAttach() {
+  const btn = $('att-btn'), menu = $('att-menu');
+  if (!btn) return;
+  const docIn = $('att-doc'), mediaIn = $('att-media'), camIn = $('att-camera');
+  docIn.accept = DOC_ACCEPT;
+  // The camera entry only where there is one to point: a phone or a tablet.
+  if (matchMedia('(pointer: coarse)').matches) menu.querySelector('[data-att="camera"]').hidden = false;
+  const close = () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); };
+  btn.addEventListener('click', () => {
+    const open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) menu.querySelector('button:not([hidden])')?.focus();
+  });
+  document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.att-wrap')) close(); });
+  menu.addEventListener('keydown', (e) => { if (e.key === 'Escape') { close(); btn.focus(); } });
+  for (const b of menu.querySelectorAll('[data-att]')) {
+    b.addEventListener('click', () => {
+      close();
+      ({ doc: docIn, media: mediaIn, camera: camIn })[b.dataset.att].click();
+    });
+  }
+  for (const input of [docIn, mediaIn, camIn]) {
+    input.addEventListener('change', () => { addFiles([...input.files]); input.value = ''; ui.input.focus(); });
+  }
+  // A picture pasted or dropped on the box is an attachment too.
+  ui.input.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); addFiles(files); }
+  });
+  ui.form.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+  ui.form.addEventListener('drop', (e) => {
+    const files = [...(e.dataTransfer?.files || [])];
+    if (files.length) { e.preventDefault(); addFiles(files); }
+  });
 }
 
 // Text that arrives in the box by pasting or dropping is not typed: the message it ends up in cannot ground a memory.
@@ -1832,14 +2395,19 @@ function wire() {
   ui.form.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = ui.input.value.trim();
-    if (!text || turn) return;
+    if (!canSend() || turn) return;
     const typed = !pasted;
+    const attach = pending.filter((p) => p.rec).map((p) => p.rec);
+    pending.length = 0;
+    paintChips();
     ui.input.value = '';
     pasted = false;
     autosize();
-    send(text, { typed });
+    send(text, { typed, attach });
   });
   ui.stop.addEventListener('click', stopTurn);
+  wireAttach();
+  wireMic();
   for (const b of document.querySelectorAll('[data-new-chat]')) b.addEventListener('click', () => { startNew(); closeSide(); });
   document.querySelector('[data-open-side]')?.addEventListener('click', (e) => {
     if (wide() && $('app').classList.contains('side-collapsed')) { sideHidden = false; keepSide(); setSide(false); return; }

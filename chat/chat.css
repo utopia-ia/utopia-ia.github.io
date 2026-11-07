@@ -477,6 +477,9 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 .tc-link .ic { width: 15px; height: 15px; }
 .tc-items { margin: var(--ef-s1) 0 0; padding-left: 1.2em; font-size: var(--ef-text-sm); }
 .tc-items li + li { margin-top: 2px; }
+.tc-sent { margin-top: var(--ef-s1); color: var(--ef-graphite); font-size: var(--ef-text-xs); }
+.tc-sent summary { cursor: pointer; }
+.tc-url { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--ef-text-xs); }
 .tc-item-btn { padding: 2px 0; border: 0; background: none; color: var(--ef-ink); font: inherit; text-decoration: underline; text-decoration-color: var(--ef-steel-strong); text-underline-offset: 3px; cursor: pointer; }
 .building {
   display: inline-flex; align-items: center; gap: 10px; margin: 0; padding: 8px 12px;
@@ -595,3 +598,68 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 .appview-frames { position: relative; flex: 1; min-height: 0; }
 .appview-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--ef-wall); }
 .app-link[aria-current="page"] { background: var(--ef-board); }
+
+/* ---------- Attachments: the «+» of the box, its menu, the chips waiting to go, and what a message carries ---------- */
+.att-wrap { position: relative; flex: none; align-self: flex-end; }
+.att-btn, .mic-btn {
+  display: grid; place-items: center; width: 40px; height: 40px; flex: none;
+  border: 0; border-radius: var(--ef-r2); background: transparent; color: var(--ef-graphite); cursor: pointer;
+  transition: background-color var(--ef-fast) var(--ef-ease), color var(--ef-fast) var(--ef-ease);
+}
+.mic-btn[hidden] { display: none; }
+.att-btn:hover, .mic-btn:hover, .att-btn[aria-expanded="true"] { background: var(--ef-board); color: var(--ef-ink); }
+.att-btn .ic, .mic-btn .ic { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.composer { padding-left: 10px; }
+.att-menu {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 20; display: flex; flex-direction: column; min-width: 13rem; padding: 6px;
+  border: 1px solid var(--ef-steel); border-radius: var(--ef-r3); background: var(--ef-wall); box-shadow: var(--ef-shadow-2);
+}
+.att-menu[hidden] { display: none; }
+.att-menu button {
+  display: flex; align-items: center; gap: var(--ef-s3); min-height: var(--ef-hit); padding: 0 var(--ef-s3);
+  border: 0; border-radius: var(--ef-r2); background: none; color: var(--ef-ink); font: inherit; text-align: left; cursor: pointer;
+}
+.att-menu button[hidden] { display: none; }
+.att-menu button:hover, .att-menu button:focus-visible { background: var(--ef-board); }
+.att-menu .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.att-chips { display: flex; flex-wrap: wrap; gap: var(--ef-s2); margin: 0 0 var(--ef-s2); padding: 0; list-style: none; }
+.att-chips[hidden] { display: none; }
+.att-chip {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 36px; padding: 0 4px 0 10px;
+  border: 1px solid var(--ef-steel); border-radius: var(--ef-r-pill); background: var(--ef-wall); font-size: var(--ef-text-sm);
+}
+.att-chip .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; flex: none; }
+.att-chip-name { min-width: 0; max-width: 16rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-chip-state { color: var(--ef-graphite); font: 400 var(--ef-text-xs)/1 var(--ef-font-mono); }
+.att-chip.is-reading .att-chip-state { color: var(--ef-ink); }
+.att-chip.is-error { border-color: var(--ef-err); background: var(--ef-err-soft); }
+.att-chip-x { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--ef-graphite); cursor: pointer; }
+.att-chip-x:hover { background: var(--ef-board); color: var(--ef-ink); }
+.att-chip-x .ic { width: 14px; height: 14px; stroke-width: 2; }
+
+.msg-user { flex-direction: column; align-items: flex-end; gap: var(--ef-s2); }
+.att-sent { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ef-s2); max-width: min(85%, 36rem); }
+.att-card { display: flex; flex-direction: column; gap: 4px; max-width: 100%; padding: 6px; border: 1px solid var(--ef-steel); border-radius: var(--ef-r3); background: var(--ef-wall); }
+.att-card.att-doc { flex-direction: row; align-items: flex-start; gap: var(--ef-s2); padding: var(--ef-s2) var(--ef-s3); }
+.att-ic { width: 22px; height: 22px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; margin-top: 2px; }
+.att-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.att-name { font-size: var(--ef-text-sm); overflow-wrap: anywhere; }
+.att-line { color: var(--ef-graphite); font-size: var(--ef-text-xs); }
+.att-id { color: var(--ef-graphite); font: 400 var(--ef-text-xs)/1.2 var(--ef-font-mono); }
+.att-card .media-el { display: block; max-width: min(18rem, 100%); max-height: 16rem; border-radius: var(--ef-r2); background: var(--ef-board); }
+.att-card audio.media-el { width: 16rem; max-height: none; background: none; }
+
+/* A media tool's card: the picture, the sound or the video itself, under the line that says what it is. */
+.tool-card.card-media { border-left-color: var(--ef-tape, var(--ef-ink)); }
+.card-media .meter { width: 100%; margin-top: var(--ef-s2); }
+.tc-media { flex-basis: 100%; margin: 0; }
+.tc-media .media-el { display: block; width: 100%; max-height: 28rem; object-fit: contain; border-radius: var(--ef-r2); background: var(--ef-board); }
+.tc-media audio.media-el { max-height: none; background: none; }
+.tc-download { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; text-decoration: none; }
+.tc-download .ic { width: 16px; height: 16px; }
+.media-gate { margin-top: var(--ef-s3); }
+.mic-btn.is-rec { background: var(--ef-err); color: var(--ef-on-ink); }
+.att-chip.is-rec { border-color: var(--ef-err); color: var(--ef-ink); }
+.att-chip.is-rec .ic { color: var(--ef-err); animation: rec-pulse 1.2s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { opacity: 0.35; } }
+.msg-note:empty { display: none; }
