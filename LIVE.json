@@ -6,6 +6,7 @@
   "served": [
     "index.html",
     "chat/",
-    "apps/"
+    "apps/",
+    "vendor/"
   ]
 }
