@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "276d3d7540a8da7049c98f4eaccd2e1a42052fa4",
-    "engineCommit": "6a845ded0110da47fb1d7c42d3598fd72ea42ae9",
+    "commit": "f996245a95dd78f1195fa5bdf57ebf3b6813b3db",
+    "engineCommit": "f39c9c389e14cb1c8f7dcdcb679b0d0bcfbbbc13",
     "dir": "js",
     "files": [
       {
@@ -211,7 +211,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "2d7390e434c5eebd7ebe334bb87b07eacab1c98b6ce19f2f726da70633c46723"
+        "sha256": "edeab9b22a3b675d619eb381eb7e269ccf0434ba74129473f1768129152578cb"
       },
       {
         "from": "js/quant-tables.js",

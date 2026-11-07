@@ -220,20 +220,85 @@ async function guardaPrefijo(fichas) {
     console.warn('[engine] no se pudo guardar el prefijo de sistema:', e?.message || e);
   }
 }
+// PREFIJO PRECALCULADO. El bloque de sistema de una app no cambia, así que su
+// estado tampoco: quien sirve la app lo genera una vez y lo publica como fichero
+// `<huella>.efp` bajo `globalThis.__ELFFUSS_PREFIJO_REMOTO` (una URL base). Si
+// el disco de este navegador no lo tiene, se baja de ahí, se comprueba ficha a
+// ficha como el de disco y se guarda para la próxima. Ahorra la primera lectura
+// del sistema, que en un móvil o en la CPU es la espera más larga de todas. La
+// huella lleva el modelo, sus bytes, la precisión de la caché, la CPU y las
+// fichas: un fichero de otro modelo u otro prompt nunca se carga.
+//
+// El fichero: «EFP1», la longitud de la cabecera (u32), la cabecera en JSON
+// ({ formato, llave, past, bpf, kvF16, fichas, partes: [[nombre, bytes]] }) y
+// los bytes de cada parte en ese orden, cada una alineada a 4.
+const MAGIA_FOTO = 'EFP1';
+const alinea4 = (n) => (n + 3) & ~3;
+export function fotoABytes(llave, d) {
+  const cab = new TextEncoder().encode(JSON.stringify({
+    formato: PREFIJO_FORMATO, llave, past: d.past, bpf: d.bpf, kvF16: d.kvF16, fichas: Array.from(d.fichas),
+    partes: d.partes.map((p) => [p.n, p.data.byteLength]),
+  }));
+  const ini = alinea4(8 + cab.length);
+  const total = d.partes.reduce((s, p) => alinea4(s + p.data.byteLength), ini);
+  const out = new Uint8Array(total);
+  out.set(new TextEncoder().encode(MAGIA_FOTO), 0);
+  new DataView(out.buffer).setUint32(4, cab.length, true);
+  out.set(cab, 8);
+  let o = ini;
+  for (const p of d.partes) { out.set(new Uint8Array(p.data), o); o = alinea4(o + p.data.byteLength); }
+  return out.buffer;
+}
+export function fotoDeBytes(buf) {
+  const u8 = new Uint8Array(buf);
+  if (u8.length < 8 || new TextDecoder().decode(u8.subarray(0, 4)) !== MAGIA_FOTO) return null;
+  const n = new DataView(buf).getUint32(4, true);
+  const cab = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + n)));
+  if (cab.formato !== PREFIJO_FORMATO) return null;
+  let o = alinea4(8 + n);
+  const partes = [];
+  for (const [nombre, bytes] of cab.partes) {
+    if (o + bytes > u8.length) return null;
+    partes.push({ n: nombre, data: buf.slice(o, o + bytes) });
+    o = alinea4(o + bytes);
+  }
+  return { llave: cab.llave, d: { past: cab.past, bpf: cab.bpf, kvF16: cab.kvF16, fichas: cab.fichas, partes } };
+}
+async function bajaPrefijo(llave) {
+  const base = globalThis.__ELFFUSS_PREFIJO_REMOTO;
+  if (typeof base !== 'string' || !base) return null;
+  try {
+    const r = await fetch(base + llave + '.efp');
+    if (!r.ok) return null;
+    const f = fotoDeBytes(await r.arrayBuffer());
+    return f && f.llave === llave ? f.d : null;
+  } catch { return null; }
+}
+
 async function cargaPrefijo(fichas) {
   if (!prefijoDiscoActivo() || !sesion) return false;
   try {
     const llave = await huellaPrefijo(fichas);
     const db = await abrePrefijos();
-    let d;
+    let d, bajado = false;
     try {
       const st = db.transaction('fotos', 'readwrite').objectStore('fotos');
       d = await pideIdb(st.get(llave));
       if (d) st.put({ ...d, t: Date.now() }, llave);
     } finally { db.close(); }
+    if (!d) { d = await bajaPrefijo(llave); bajado = !!d; }
     if (!d || !Array.isArray(d.fichas) || d.fichas.length !== fichas.length || d.fichas.some((t, k) => t !== fichas[k])) return false;
     const ok = sesion.state.importaInstantanea('sistema', d);
-    if (ok) console.log(`[engine] prefijo de sistema cargado de disco · ${fichas.length} fichas sin procesar`);
+    if (ok && bajado) {
+      // Al disco, para que la próxima visita no lo vuelva a bajar.
+      try {
+        const db2 = await abrePrefijos();
+        try { await pideIdb(db2.transaction('fotos', 'readwrite').objectStore('fotos').put({ t: Date.now(), ...d }, llave)); }
+        finally { db2.close(); }
+      } catch { /* solo una caché */ }
+      prefijoGuardadoEnVisita = true;
+    }
+    if (ok) console.log(`[engine] prefijo de sistema ${bajado ? 'descargado precalculado' : 'cargado de disco'} · ${fichas.length} fichas sin procesar`);
     return ok;
   } catch (e) {
     console.warn('[engine] no se pudo leer el prefijo de sistema:', e?.message || e);

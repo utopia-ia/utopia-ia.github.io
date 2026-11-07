@@ -340,6 +340,10 @@ for (const id of ['lfm3-1.7b', 'lfm3-1.7b-q4']) if (MODELS[id]) MODELS[id].tope 
 // there instead of reading the whole system prompt again before the first letter (engine provider.js, «prefijo de
 // sistema en disco»). Claw and Code leave it off: their system block changes at every step.
 globalThis.__ELFFUSS_PREFIJO_DISCO = true;
+// And on the first visit, the snapshot computed once by us (UtopiaIA/elffuss-prefixes, named by its key): the first
+// letter no longer waits for the system prompt to be read. On the CPU that was 6.2 s → 0.56 s on a computer, and minutes
+// on a tablet. The engine checks it token by token and only takes a file that matches what it would compute.
+globalThis.__ELFFUSS_PREFIJO_REMOTO = 'https://huggingface.co/UtopiaIA/elffuss-prefixes/resolve/main/';
 const model = () => (device.id ? MODELS[device.id] : null);
 const modelUrl = () => { const m = model(); return m && !Array.isArray(m.url) ? m.url : null; };
 
@@ -373,13 +377,46 @@ async function pickGpu() {
   return { ok: false, why: 'whyNoAdapter' };
 }
 
+// On the processor the engine uses several cores only on an isolated page (COOP/COEP): on a tablet without WebGPU,
+// two cores read and wrote ×1.6 faster. The site cannot send those headers for one kind of device, so a small service
+// worker (../coi-sw.js) adds them to this page, and only on devices that run on the CPU. Isolated, the page cannot
+// embed the shared model store or the shared memory, which live on other sites: the model is kept in this site's own
+// store (one more download, once) and the memory stays off. Returns true when the page is about to reload isolated.
+const COI_TRIED = 'elffuss.coi.tried';
+// Off until a real tablet confirms it: on the first try the tab started over while loading the model (?coi=1 turns it
+// on for testing).
+const ISOLATE_CPU = /[?&]coi=1(&|$)/.test(location.search);
+async function isolateForCpu() {
+  const sw = navigator.serviceWorker;
+  if (!sw) return false;
+  if (!ISOLATE_CPU && device.cpu) return false;
+  if (!device.cpu) {
+    // A device that now has a usable WebGPU leaves the isolation behind (it takes effect on the next load).
+    try { for (const r of await sw.getRegistrations()) if (/\/coi-sw\.js$/.test(r.active?.scriptURL || '')) r.unregister(); } catch { /* — */ }
+    return false;
+  }
+  if (self.crossOriginIsolated) return false;
+  try { if (sessionStorage.getItem(COI_TRIED)) return false; sessionStorage.setItem(COI_TRIED, '1'); } catch { return false; }
+  try {
+    await sw.register(new URL('../coi-sw.js', import.meta.url), { scope: new URL('../', import.meta.url).pathname });
+    await sw.ready;
+    location.reload();
+    return true;
+  } catch (e) {
+    console.warn('[chat] could not isolate the page for the CPU:', e?.message || e);
+    return false;
+  }
+}
+// The shared store is on another site, which an isolated page cannot embed: this site's own store, without waiting.
+if (self.crossOriginIsolated) try { sessionStorage.setItem('elffuss.broker.down', '1'); } catch { /* — */ }
+
 // Is the model already stored? The shared store of the Elffuss sites first, then this site's own copy. Neither
 // question downloads any weights.
 const keyFor = (url) => String(url).replace(/[?#].*$/, '').replace(/[^\w.\-]+/g, '_').slice(-180);
 async function isCached() {
   const m = model(); const url = modelUrl();
   if (!m || !url || !cachea(m)) return false;
-  if (!mirror) try {
+  if (!mirror && !self.crossOriginIsolated) try {
     const { isSharedCached } = await import('./js/runtime/model-broker.js');
     if (await isSharedCached(url)) return true;
   } catch { /* the shared store is not reachable */ }
@@ -1880,6 +1917,7 @@ async function boot() {
   Object.assign(device, await pickDevice());
   markDetected();
   if (!device.ok) { showNoGpu(device.why); return; }
+  if (await isolateForCpu()) return;              // the page reloads isolated
   setModelState('checking');
   setModelState((await isCached()) ? 'cached' : 'missing');
   markChecked();
