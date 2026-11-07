@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "18bee9ffaafd1d56cf9cc0b46220a4f64129bc51",
-    "engineCommit": "178836c8e565ab0bb799e4ec9f2b60b943556d63",
+    "commit": "6f9ce12a13622491e2ec43b4673d411afad92542",
+    "engineCommit": "37973b23bf652ced5c960914246b705919a06865",
     "dir": "js",
     "files": [
       {
@@ -96,7 +96,7 @@
       {
         "from": "js/kernels.gemv.wgsl.js",
         "to": "engine/kernels.gemv.wgsl.js",
-        "sha256": "9433f78a449de0fbbbd812131583a173b00e653178eabd66968951bedaab468f"
+        "sha256": "780aaf83b4da977dd4cba1020d9ea4a5172976769c4d9c8e6953a1766ccede10"
       },
       {
         "from": "js/kernels.hadamard.wgsl.js",

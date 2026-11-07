@@ -229,6 +229,7 @@ body { overflow: hidden; background: var(--ef-wall); }
 
 .made-in { display: flex; align-items: center; gap: 6px; margin: var(--ef-s2) 0 0; padding-inline: var(--ef-s2); color: var(--ef-graphite); font-size: var(--ef-text-xs); }
 .made-in-flag { width: 24px; height: 16px; flex: none; border-radius: 2px; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.12); }
+.made-in-ic { width: 11px; height: 11px; flex: none; margin-left: -2px; }
 .speed { margin: var(--ef-s1) 0 0; color: var(--ef-graphite); font-size: 11px; font-variant-numeric: tabular-nums; }
 .stamp {
   display: inline-flex; align-items: center; min-height: 22px; margin-top: var(--ef-s2); padding: 0 7px;

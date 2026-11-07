@@ -185,7 +185,10 @@ export function gemv2Forma({ tipo, filas, k, T = 1, nm = 1, maxCompartida = 1638
   }
   const q8 = tipo === 'Q8_0' || tipo === 'Q8_0R';
   let R = q8 ? 2 : tipo === 'Q6_K' ? 2 : 4;
-  let NSG = q8 ? 4 : 1;
+  // K en 4 subgrupos para todos los formatos. Q4_0 y Q6_K iban con uno solo, y al
+  // escribir (un token) eso dejaba pocos hilos en marcha: medido en LFM3 QAD-Q4_0,
+  // seis rondas alternas, R4·S4 escribe ×1,25 más rápido que R4·S1, mismo texto (7-nov).
+  let NSG = 4;
   if (Math.min(...lista) <= 512) { NSG = 4; R = Math.min(R, 2); }
   // Con varios tokens las activaciones de cada token viven en registros (y en
   // Q4_0/Q6_K también su copia preescalada): mejor una partición por carril.
