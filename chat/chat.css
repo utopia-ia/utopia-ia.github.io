@@ -219,6 +219,7 @@ body { overflow: hidden; background: var(--ef-wall); }
 .think.is-live.is-reading summary { animation: none; font-variant-numeric: tabular-nums; background: linear-gradient(90deg, var(--ef-tape-soft) var(--read, 0%), var(--ef-wall) var(--read, 0%)); }
 .think-body { margin-top: var(--ef-s2); padding: var(--ef-s2) 0 var(--ef-s2) var(--ef-s3); border-left: 1px solid var(--ef-steel); color: var(--ef-graphite); font-size: var(--ef-text-sm); white-space: pre-wrap; max-height: 16rem; overflow-y: auto; }
 
+.speed { margin: var(--ef-s1) 0 0; color: var(--ef-graphite); font-size: 11px; font-variant-numeric: tabular-nums; }
 .stamp {
   display: inline-flex; align-items: center; min-height: 22px; margin-top: var(--ef-s2); padding: 0 7px;
   border: 1.5px solid currentColor; border-radius: var(--ef-r1); color: var(--ef-graphite);

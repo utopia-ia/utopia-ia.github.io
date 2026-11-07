@@ -188,7 +188,10 @@ const pideIdb = (rq) => new Promise((ok, mal) => { rq.onsuccess = () => ok(rq.re
 async function huellaPrefijo(fichas) {
   const m = MODELS[clave] || {};
   const url = Array.isArray(m.url) ? m.url.map((f) => f.url).join('|') : String(m.url || '');
-  const texto = JSON.stringify([PREFIJO_FORMATO, url, m.bytes || 0, sesion?.state?.kvF16 ?? null, fichas.length, fichas.join(',')]);
+  // «cpu»: la foto de la CPU (caché f32 en la memoria del módulo) y la de la
+  // tarjeta tienen formatos distintos; con llaves distintas nunca se cruzan. Solo
+  // en la de CPU, para que las fotos de la tarjeta ya guardadas sigan valiendo.
+  const texto = JSON.stringify([PREFIJO_FORMATO, url, m.bytes || 0, sesion?.state?.kvF16 ?? null, ...(modoCpu ? ['cpu'] : []), fichas.length, fichas.join(',')]);
   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texto));
   return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }

@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "693fc9b9717e3d29dc33db212eda78485d9a2c96",
-    "engineCommit": "17e2ae28dd9e7f48d140af00d0a979dce76cc514",
+    "commit": "276d3d7540a8da7049c98f4eaccd2e1a42052fa4",
+    "engineCommit": "6a845ded0110da47fb1d7c42d3598fd72ea42ae9",
     "dir": "js",
     "files": [
       {
@@ -16,27 +16,27 @@
       {
         "from": "js/cpu-jefe.js",
         "to": "engine/cpu-jefe.js",
-        "sha256": "4b0865d55ece939cde2004ec385bc79bc0f403412a3f5306d05d2b3cac2bcf24"
+        "sha256": "8ca56dd5fe06bd7a309f8645d80f2a7fd72d58bb1dba42c9183e5bcdd656781a"
       },
       {
         "from": "js/cpu-kernels.js",
         "to": "engine/cpu-kernels.js",
-        "sha256": "adbdc0bb34116b4fc73927d51463859de08324787e3f88e48608a9a82e00628d"
+        "sha256": "8701ea735da4c72a69e9955ac0f9d97db138269eb639c5820c20b51b66b7257d"
       },
       {
         "from": "js/cpu-proxy.js",
         "to": "engine/cpu-proxy.js",
-        "sha256": "a952ba9173bd55a0c1c45a084bdf6f57f6b2c0881656dff31f4fe9afaa80af45"
+        "sha256": "8d422a2c7536ea8381ccba7c0cdc53630bb195a0852293a545fa9114289e918f"
       },
       {
         "from": "js/cpu-trabajo.js",
         "to": "engine/cpu-trabajo.js",
-        "sha256": "a3917a856b80ef842214861665d8503672d274c8e653f7d1f7a3c41e03828869"
+        "sha256": "86d61eef0cd533e9f6e81e72c334bbad961512e254bf55a8459fad2f797bf224"
       },
       {
         "from": "js/cpu.js",
         "to": "engine/cpu.js",
-        "sha256": "2e06ecba583a047d775ef0393f08f85dc1610df71c23b5b88cd230d79f5e89d1"
+        "sha256": "220931b935b74431d0216665854df68a588b63e402f87113f1c3d493d5655a6a"
       },
       {
         "from": "js/device.js",
@@ -211,7 +211,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "8ed975a3c097458efdbad0d29b0d4cfee8f8049077a5a148cb622231ae676614"
+        "sha256": "2d7390e434c5eebd7ebe334bb87b07eacab1c98b6ce19f2f726da70633c46723"
       },
       {
         "from": "js/quant-tables.js",

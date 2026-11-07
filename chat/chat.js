@@ -96,6 +96,8 @@ const T = {
     fineCpu: 'This browser has no usable WebGPU, so the model runs on the processor: slower than on a graphics card.',
     thinking: 'Thinking…',
     reading: (n) => `Reading · ${n}%`,
+    speed: (r, rs, w, ws) => `Read ${r} tokens at ${rs} tok/s · wrote ${w} at ${ws} tok/s`,
+    speedCached: (c) => ` (${c} already in memory)`,
     reasoning: 'Reasoning',
     stopped: 'Stopped',
     cut: 'The model used its whole thinking budget before writing an answer. It can answer straight away instead, more briefly.',
@@ -208,6 +210,8 @@ const T = {
     fineCpu: 'Este navegador no tiene WebGPU utilizable, así que el modelo corre en el procesador: más despacio que en una tarjeta gráfica.',
     thinking: 'Pensando…',
     reading: (n) => `Leyendo · ${n} %`,
+    speed: (r, rs, w, ws) => `Leyó ${r} tokens a ${rs} tok/s · escribió ${w} a ${ws} tok/s`,
+    speedCached: (c) => ` (${c} ya en memoria)`,
     reasoning: 'Razonamiento',
     stopped: 'Parada',
     cut: 'El modelo agotó todo su margen para pensar antes de escribir la respuesta. Puede responder directamente, de forma más breve.',
@@ -618,11 +622,19 @@ function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
 
   li.querySelector('.stamp')?.remove();
   li.querySelector('.note')?.remove();
+  li.querySelector('.speed')?.remove();
   if (m.stopped) {
     const s = document.createElement('span'); s.className = 'stamp'; s.textContent = t('stopped'); li.append(s);
   }
   if (m.note) {
     const n = document.createElement('p'); n.className = 'note'; n.textContent = t(m.note); li.append(n);
+  }
+  // How fast this step ran on this device: what it read (the prompt the model had not seen yet) and what it wrote.
+  if (m.speed && !writing) {
+    const v = m.speed, n = (x) => Math.round(x).toLocaleString(lang);
+    const p = document.createElement('p'); p.className = 'speed';
+    p.textContent = t('speed', n(v.read), n(v.readTokS), n(v.wrote), n(v.wroteTokS)) + (v.cached ? t('speedCached', n(v.cached)) : '');
+    li.append(p);
   }
 }
 
@@ -895,9 +907,6 @@ async function runTool(call, ctx) {
     case 'app.create': {
       let name = cleanName(a.name);
       const html = typeof a.html === 'string' ? a.html : '';
-      // A small model often leaves the name out when it rewrites the app open in the panel: that is the one it means.
-      // With no app open, the page's <title> names it.
-      if (!name && html.trim()) name = panel.openName() || cleanName(/<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1]);
       if (!name || !html.trim()) return fail(es ? 'Falta name o html' : 'Missing name or html');
       // A model that rewrites the open app as an HTML block may change its <title>, and so its name. If an app is
       // open and the user asked for a change (and not for a new app), the new version replaces the open one.
@@ -927,17 +936,6 @@ async function runTool(call, ctx) {
     }
     case 'app.open': {
       const name = cleanName(a.name);
-      // No name while an app is open ("fix it", "what does it do"): the model wants that app. It reads its HTML and how
-      // to save a new version, and the turn goes on, instead of an error the visitor cannot act on.
-      if (!name && panel.openName()) {
-        const open = panel.openName();
-        const err = panel.lastError();
-        const text = es
-          ? `La app «${open}» está abierta en el panel${err ? ` y da este error: ${err}` : ''}. Su HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nPara cambiarla o arreglarla, llama a app.create con name «${open}» y el HTML completo nuevo.`
-          : `The app “${open}” is open in the panel${err ? ` and shows this error: ${err}` : ''}. Its HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nTo change or fix it, call app.create with name “${open}” and the whole new HTML.`;
-        ctx.summary.name = open;
-        return { text, result: { name: open, saved: true } };
-      }
       if (!name) return fail(es ? 'Falta name' : 'Missing name');
       try {
         const app = await bridge.call('apps.get', { name });
@@ -1534,6 +1532,10 @@ async function runTurn(li, mine, ctl, reason) {
         if (!queued) { queued = true; requestAnimationFrame(paint); }
       }, { signal: ctl.signal, onPrefill: (done, total) => { if (!finished && !raw) paintReading(li, done, total); } });
       finished = true;
+      const med = engine.ultimaMedida?.();
+      if (med && med.genTokens > 0) {
+        msg.speed = { read: med.procesados || 0, readTokS: med.prefillTokS || 0, wrote: med.genTokens, wroteTokS: med.genTokS || 0, cached: med.reusados || 0 };
+      }
       const p = reason === false ? { thinking: '', content: raw } : split(raw);
       msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
       msg.content = String(result || '').trim();

@@ -51,7 +51,7 @@ async function atiende(d) {
       const modelo = await cargaModeloCpu(ranged, info, hp, (h, t) => self.postMessage({ op: 'progreso', h, t }),
         { hilos: hilosDisponibles(d.hilos) });
       sesion = creaSesionCpu(modelo, { contextLen: d.ctx });
-      self.postMessage({ op: 'listo', resumen: sesion.state.summary(), vocab: modelo.vocab });
+      self.postMessage({ op: 'listo', resumen: sesion.state.summary(), vocab: modelo.vocab, forma: sesion.state.formaInstantanea() });
     } else if (d.op === 'forward') {
       // El avance de un prompt largo, lote a lote: en la CPU es la espera más
       // larga de todas, y la página la enseña.
@@ -61,6 +61,9 @@ async function atiende(d) {
       if (globalThis.__ELFFUSS_CPU_PERFIL && (d.ids.length > 1 || ++genPerfil % 32 === 0)) {
         self.postMessage({ op: 'perfil', datos: sesion.tomaPerfil() });
       }
+    } else if (d.op === 'exporta') {
+      const x = sesion.state.exportaInstantanea(d.nombre);
+      self.postMessage({ op: 'exportado', id: d.id, datos: x }, x ? x.partes.map((p) => p.data) : []);
     } else if (d.op === 'estado') {
       sesion.state[d.metodo](...(d.args || []));
     }
