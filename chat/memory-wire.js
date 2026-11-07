@@ -167,6 +167,17 @@ export function promptPieces(promptLang) {
   return { tools: lines, rules: M.memory.memoryPromptRules(M.cfg, promptLang), save: M.cfg.tools.prefix + 'save' };
 }
 
+// ---------- Is the store there? ----------
+// One cheap question to the store, the way a turn asks it (context() lets a client that gave up try again): true when
+// it answered. The chat calls it once at load and then, while it is down, now and then in the background.
+export async function probe() {
+  if (!M) return false;
+  const r = await client().context({ query: '', model: {}, scopes: [...SCOPES] }).catch(() => ({ unavailable: true }));
+  const ok = !r?.unavailable;
+  if (ok) lastDown = false;
+  return ok;
+}
+
 // ---------- The sidebar count ----------
 export async function count() {
   if (!M) return null;
@@ -212,7 +223,11 @@ export async function beginTurn({ messages, model, conv, incognito }) {
     if (incognito) return ask();
     if (globalThis.navigator?.onLine === false) { lastDown = true; return UNAVAILABLE(); }
     const p = ask().catch(UNAVAILABLE);
-    const r = lastDown ? await Promise.race([p, new Promise((ok) => setTimeout(() => ok(UNAVAILABLE()), DOWN_WAIT_MS))]) : await p;
+    let r = lastDown ? await Promise.race([p, new Promise((ok) => setTimeout(() => ok(UNAVAILABLE()), DOWN_WAIT_MS))]) : await p;
+    // The engine's client gives up when the store has not answered within its wait by the wall clock, and a page busy
+    // for longer than that (a model loading: measured in Chrome and WebKit, a 9 s long task makes it give up although
+    // the frame answers right after) counts as no answer. Asked once more at once, it answers.
+    if (r.unavailable && !lastDown) r = await ask().catch(UNAVAILABLE);
     lastDown = !!r.unavailable;
     return r;
   };

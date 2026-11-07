@@ -168,6 +168,8 @@ body { overflow: hidden; background: var(--ef-wall); }
 #mem-btn .mem-off-line { display: none; stroke-width: 2; }
 #mem-btn.is-off { color: var(--ef-ink); background: var(--ef-board); }
 #mem-btn.is-off .mem-off-line { display: block; }
+/* The store not answering: a small dot on the button (its label says why), never a card in the conversation. */
+#mem-btn.is-down::after { content: ""; position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--ef-warn, #d9a441); box-shadow: 0 0 0 2px var(--ef-wall, #fff); }
 /* The engine's memory cards bring light colours inline; here they take the page's. */
 .mem-root {
   --mem-bg: var(--ef-surface) !important; --mem-fg: var(--ef-ink) !important; --mem-muted: var(--ef-graphite) !important;

@@ -239,8 +239,10 @@ const CATALOG = {
 // so, and apps are kept in this browser rather than shared with Claw.
 // `media: true` offers the media tools (media-tools.js): their lines go after the web tools, and rule 7 says what the
 // media ids are for instead of «you cannot make images». The public copy has no model store, so no media tools.
-export function systemPrompt(lang, mem = null, { web = true, media = false } = {}) {
-  const full = fullPrompt(lang, mem, media);
+// `apps: false` leaves the app tools and the rules for building an app out of the prompt (app-intent.js decides, per
+// turn): measured on elffuss.com, with them always there the small model built apps nobody asked for.
+export function systemPrompt(lang, mem = null, { web = true, media = false, apps = true } = {}) {
+  const full = fullPrompt(lang, mem, media, apps);
   return web ? full : copyPrompt(full, lang);
 }
 
@@ -258,9 +260,9 @@ function copyPrompt(full, lang) {
     .replaceAll(es ? '(compartidas con Claw)' : '(shared with Claw)', es ? '(en este navegador)' : '(kept in this browser)');
 }
 
-function fullPrompt(lang, mem, media = false) {
+function fullPrompt(lang, mem, media = false, apps = true) {
   const es = lang === 'es';
-  const tools = [...CATALOG[es ? 'es' : 'en'], ...(media ? mediaToolLines(lang) : []), ...(mem ? mem.tools : [])].join('\n');
+  const tools = [...CATALOG[es ? 'es' : 'en'].filter((l) => apps || !/^- app\./.test(l)), ...(media ? mediaToolLines(lang) : []), ...(mem ? mem.tools : [])].join('\n');
   const rule7 = media
     ? (es ? `7) No puedes mirar el reloj: la fecha de hoy está en CONTEXTO AHORA; nunca inventes la hora ni otra fecha. ${AUDIO_TOOLS ? 'Imágenes, música, voz y vídeo' : 'Imágenes y vídeo'} los haces SOLO con sus herramientas. ${mediaRule(lang)}`
       : `7) You cannot read the clock: today's date is in CONTEXT NOW; never invent the time or any other date. You make ${AUDIO_TOOLS ? 'pictures, music, speech and video' : 'pictures and video'} ONLY with their tools. ${mediaRule(lang)}`)
@@ -269,7 +271,23 @@ function fullPrompt(lang, mem, media = false) {
   const example = mem
     ? (es ? `\`\`\`tool\n{"tool": "${mem.save}", "args": {"fact": "Prefiere los colores oscuros"}}\n\`\`\`\n(si el usuario dice «recuerda que prefiero los colores oscuros»)`
       : `\`\`\`tool\n{"tool": "${mem.save}", "args": {"fact": "Prefers dark colours"}}\n\`\`\`\n(when the user says "remember that I prefer dark colours")`)
-    : (es ? '```tool\n{"tool": "app.list", "args": {}}\n```' : '```tool\n{"tool": "app.list", "args": {}}\n```');
+    : apps ? '```tool\n{"tool": "app.list", "args": {}}\n```'
+      : (es ? '```tool\n{"tool": "web.search", "args": {"query": "receta de lentejas"}}\n```' : '```tool\n{"tool": "web.search", "args": {"query": "lentil soup recipe"}}\n```');
+  const appRules = apps
+    ? (es ? `2) Para crear una app responde SOLO con el documento HTML completo, autocontenido (CSS y JS dentro), en el idioma del usuario y con un <title> corto. La app corre en una caja sin red: nada de ficheros, fuentes, imágenes ni librerías de fuera, ni fetch. Haz el JavaScript sencillo y repásalo: que cada variable esté declarada donde se usa y que la app responda al escribir o pulsar.
+\`\`\`html
+<!doctype html><html>…</html>
+\`\`\`
+3) Para CAMBIAR la app abierta en el panel, escribe otra vez el documento HTML completo con el cambio y el mismo <title>.`
+      : `2) To build an app, reply ONLY with the complete, self-contained HTML document (CSS and JS inside), in the user's language, with a short <title>. The app runs in a box with no network: no outside files, fonts, images or libraries, and no fetch. Keep the JavaScript simple and check it: every variable declared where it is used, and the app reacts when the user types or clicks.
+\`\`\`html
+<!doctype html><html>…</html>
+\`\`\`
+3) To CHANGE the app open in the panel, write the whole HTML document again with the change and the same <title>.`)
+    : (es ? `2) En este turno no se crean apps: si piden código o un ejemplo (también HTML), escríbelo en un bloque de código para leer.
+3) Las listas, los textos, las explicaciones y las imágenes van en la respuesta, nunca dentro de una página HTML.`
+      : `2) No apps are built on this turn: when asked for code or an example (HTML too), write it in a code block to read.
+3) Lists, texts, explanations and pictures go in the answer, never inside an HTML page.`);
   const memRules = mem ? `\n\n${es ? 'MEMORIA' : 'MEMORY'}:\n${mem.rules}` : '';
   if (es) {
     return `Eres el asistente del chat de Elffuss. Corres entero dentro del navegador del usuario, en su propio dispositivo, con el motor de Elffuss. Responde con claridad y brevedad. Usa Markdown cuando ayude. Responde en el idioma en que te escriba el usuario.
@@ -280,11 +298,7 @@ ${tools}
 Cómo actuar:
 1) Para usar una herramienta responde SOLO con:
 ${example}
-2) Para crear una app responde SOLO con el documento HTML completo, autocontenido (CSS y JS dentro), en el idioma del usuario y con un <title> corto. La app corre en una caja sin red: nada de ficheros, fuentes, imágenes ni librerías de fuera, ni fetch. Haz el JavaScript sencillo y repásalo: que cada variable esté declarada donde se usa y que la app responda al escribir o pulsar.
-\`\`\`html
-<!doctype html><html>…</html>
-\`\`\`
-3) Para CAMBIAR la app abierta en el panel, escribe otra vez el documento HTML completo con el cambio y el mismo <title>.
+${appRules}
 4) Lo que recuerdas del usuario llega en el bloque <memoria> de CONTEXTO AHORA: úsalo sin volver a preguntarlo.
 5) Tras un [resultado] correcto, o si no hace falta herramienta, responde con texto normal. No repitas una herramienta que ya salió bien. Nunca digas que has hecho algo si no has llamado a la herramienta en este turno.
 6) Para cualquier cosa que dependa de internet o de datos actuales (noticias, precios, el tiempo, resultados, personas, empresas, «busca…») usa web.search, aunque creas saberlo; si un resultado no basta, lee la página con web.fetch. Si preguntan por algo DE una web concreta (un periódico, una tienda, una administración, una documentación), pon site: y su dominio en la búsqueda, por ejemplo «site:aemet.es olas de calor». No pongas años en la búsqueda si el usuario no los dice: para «el último…» o «el próximo…», busca esas palabras, no el año que creas. Responde con lo que digan los resultados y pon los enlaces de donde lo sacas. Nunca digas que no puedes buscar.
@@ -302,11 +316,7 @@ ${tools}
 How to act:
 1) To use a tool, reply ONLY with:
 ${example}
-2) To build an app, reply ONLY with the complete, self-contained HTML document (CSS and JS inside), in the user's language, with a short <title>. The app runs in a box with no network: no outside files, fonts, images or libraries, and no fetch. Keep the JavaScript simple and check it: every variable declared where it is used, and the app reacts when the user types or clicks.
-\`\`\`html
-<!doctype html><html>…</html>
-\`\`\`
-3) To CHANGE the app open in the panel, write the whole HTML document again with the change and the same <title>.
+${appRules}
 4) What you remember about the user comes in the <memory> block of CONTEXT NOW: use it without asking again.
 5) After a correct [result], or when no tool is needed, answer in plain text. Do not repeat a tool that already worked. Never say you did something unless you called the tool in this turn.
 6) For anything that depends on the internet or on current data (news, prices, weather, results, people, companies, "search…") use web.search, even if you think you know; if a result is not enough, read the page with web.fetch. When asked about something ON a specific website (a newspaper, a shop, an administration, some documentation), put site: and its domain in the query, for example "site:python.org read json". Do not put years in the query unless the user says them: for "the latest…" or "the next…", search those words, not the year you think it is. Answer from what the results say and give the links you took it from. Never say you cannot search.

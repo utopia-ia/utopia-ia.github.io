@@ -29,6 +29,7 @@ import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
 import { parseToolCall, writingTool, systemPrompt, contextBlock, withContext, CONTEXT_LABEL } from './tools.js';
 import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes } from './media-tools.js';
 import { needsMediaTools, hasMediaIn } from './media-intent.js';
+import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
 import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, startRecording, toMono16k, keepVoiceNote } from './attach.js';
 
 const $ = (id) => document.getElementById(id);
@@ -118,6 +119,7 @@ const T = {
     errGeneric: 'The model could not answer.',
     retry: 'Try again',
     noReason: 'Answer without reasoning',
+    makeApp: 'Create as an app',
     details: 'Details',
     delAsk: 'Delete this chat?',
     delYes: 'Delete',
@@ -178,6 +180,7 @@ const T = {
     mineMore: (n) => `${n} more in Claw`,
     memCount: (n) => (n === 0 ? 'Remembers nothing yet' : n === 1 ? 'Remembers 1 thing' : `Remembers ${n} things`),
     memBtnOn: 'Memory on in this chat: it uses and saves what you ask it to remember. Press to turn it off here.',
+    memDownBtn: 'Memory is not available right now; it keeps trying on its own',
     memBtnOff: 'Memory off in this chat: it neither reads nor saves memories. Press to turn it on.',
     forgetLearnt: (n) => (n === 1 ? 'Also forget the 1 thing I learnt here' : `Also forget the ${n} things I learnt here`),
     forgetFailed: 'I could not forget what I learnt here, so the chat is still here. Try again in a moment.',
@@ -274,6 +277,7 @@ const T = {
     errGeneric: 'El modelo no ha podido responder.',
     retry: 'Reintentar',
     noReason: 'Responder sin razonar',
+    makeApp: 'Crear como app',
     details: 'Detalles',
     delAsk: '¿Borrar esta conversación?',
     delYes: 'Borrar',
@@ -333,6 +337,7 @@ const T = {
     mineMore: (n) => `${n} más en Claw`,
     memCount: (n) => (n === 0 ? 'Aún no recuerda nada' : n === 1 ? 'Recuerda 1 cosa' : `Recuerda ${n} cosas`),
     memBtnOn: 'Memoria activada en esta conversación: usa y guarda lo que le pidas recordar. Pulsa para apagarla aquí.',
+    memDownBtn: 'La memoria no está disponible ahora; se reintenta sola',
     memBtnOff: 'Memoria apagada en esta conversación: ni lee ni guarda recuerdos. Pulsa para encenderla.',
     forgetLearnt: (n) => (n === 1 ? 'Olvidar también la cosa que aprendí aquí' : `Olvidar también las ${n} cosas que aprendí aquí`),
     forgetFailed: 'No he podido olvidar lo que aprendí aquí, así que el chat sigue aquí. Inténtalo dentro de un momento.',
@@ -796,6 +801,14 @@ function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
   }
   if (m.note) {
     const n = document.createElement('p'); n.className = 'note'; n.textContent = t(m.note); li.append(n);
+  }
+  // An app the model wrote on a turn that asked for none: shown as code, and built only if the user presses this.
+  li.querySelector('.make-app')?.remove();
+  if (m.offerApp && !writing) {
+    const b = el('button', 'mini-btn make-app', t('makeApp'));
+    b.type = 'button'; b.dataset.makeApp = '';
+    b.addEventListener('click', () => makeOfferedApp(li, m), { once: true });
+    li.append(b);
   }
   // How fast this step ran on this device: what it read (the prompt the model had not seen yet) and what it wrote.
   if (m.speed && !writing) {
@@ -1284,6 +1297,29 @@ async function runMedia(call, ctx) {
   } finally { mediaUi = null; }
 }
 
+// The «Crear como app» button of a page shown as code (see runTurn): builds it as app.create would, in that message.
+async function makeOfferedApp(li, m) {
+  const html = /```html\n([\s\S]*?)\n```/.exec(m.content || '')?.[1] || '';
+  if (!html.trim() || turn) return;
+  const mine = chat;
+  const call = { tool: 'app.create', args: { name: m.offerApp?.name || '', html } };
+  const summary = callSummary(call);
+  const ctl = new AbortController();
+  const ctx = { userText: '', summary, memory: null, signal: ctl.signal, li, progress: () => {},
+    ask: (scope, detail) => requirePerm(scope, detail, li, ctl.signal), askMemory: async () => null };
+  const res = await runTool(call, ctx);
+  delete m.offerApp;
+  const step = { role: 'assistant', content: '', thinking: '', call: summary, result: res.result };
+  const card = appendBot();
+  paintBot(card, step);
+  paintBot(li, m);
+  if (mine) {
+    mine.messages.push(step, { role: 'user', content: `[result app.create]\n${res.text}`, meta: 'result' });
+    mine.updated = Date.now();
+    await store.put(mine);
+  }
+}
+
 // The download question of a media model, the chat's own download plate: what, how much, and two buttons.
 function mediaGate(li, q, signal) {
   return new Promise((resolve, reject) => {
@@ -1497,9 +1533,29 @@ function paintMemToggle() {
   const off = incognito();
   btn.setAttribute('aria-pressed', String(off));
   btn.classList.toggle('is-off', off);
-  const label = off ? t('memBtnOff') : t('memBtnOn');
+  const label = (off ? t('memBtnOff') : t('memBtnOn')) + (memDown && !off ? ' · ' + t('memDownBtn') : '');
   btn.setAttribute('aria-label', label);
   btn.title = label;
+  btn.classList.toggle('is-down', memDown && !off);
+}
+
+// The store not answering is the memory button's state, never a card in the conversation (Kiko: a «Memoria no
+// disponible ahora · Reintentar» card under «Pensando…» after an ordinary question «queda muy feo»). The button gets a
+// small dot and says why; the chat asks the store again on its own, waiting longer each time (2 s up to a minute),
+// and the dot goes as soon as it answers. Asked to remember or forget while it is down, the answer says so in one
+// line (the memory tools' own result, runTool).
+let memDown = false;
+let memRetry = null, memRetryWait = 2000;
+function setMemDown(down) {
+  if (memDown !== down) { memDown = down; paintMemToggle(); }
+  clearTimeout(memRetry); memRetry = null;
+  if (!down) { memRetryWait = 2000; return; }
+  memRetry = setTimeout(async () => {
+    memRetry = null;
+    const ok = await memory.probe().catch(() => false);
+    if (!ok) memRetryWait = Math.min(memRetryWait * 2, 60000);
+    setMemDown(!ok);
+  }, memRetryWait);
 }
 $('mem-btn')?.addEventListener('click', () => {
   const on = !incognito();
@@ -1873,7 +1929,7 @@ async function runTurn(li, mine, ctl, reason) {
   const userText = [...mine.messages].reverse().find((m) => m.role === 'user' && m.meta !== 'result')?.content || '';
   // Asked for an app: no reasoning step. The small model plans the whole page in its reasoning, spends the budget
   // (4,000 tokens, minutes on a phone) and has nothing left to write it with; straight away it writes the page.
-  if (reason !== false && ASKS_APP.test(userText)) reason = false;
+  if (reason !== false && needsAppTools(userText, { open: panel.openName() }).apps) reason = false;
   // On the processor it answers straight away: a thousand tokens of reasoning are minutes before the first letter
   // there, and the engine keeps a shorter context on the processor, where the reasoning budget does not fit.
   if (device.cpu) reason = false;
@@ -1885,6 +1941,9 @@ async function runTurn(li, mine, ctl, reason) {
     attachments: lastUser?.attach?.length || 0,
     hasMedia: hasMediaIn(mine.messages.map((m) => `${m.context || ''}\n${m.content || ''}`).join('\n')),
   }).media;
+  // The app tools likewise (app-intent.js): asked for an app, an app open in the panel and a change or fix for it, or
+  // a saved app named. Decided on the first step, when the list of saved apps is at hand.
+  let appTurn = null;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
   try {
@@ -1922,7 +1981,7 @@ async function runTurn(li, mine, ctl, reason) {
       scrollEnd();
       if (step === 0) {
         mt = await untilStopped(memoryTurn(mine), ctl.signal);
-        if (mt?.block.unavailable) noteMemoryDown(li, mine);
+        setMemDown(!!mt?.block.unavailable);
         memPrompt = memory.promptPieces(lang);
       }
       let call = null;
@@ -1932,6 +1991,7 @@ async function runTurn(li, mine, ctl, reason) {
         finished = true;
       } else {
         const now = await untilStopped(liveContext(), ctl.signal);
+        if (appTurn === null) appTurn = needsAppTools(userText, { open: now.open, names: (now.apps || []).map((a) => a.name) }).apps;
         const history = withContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang) }), CONTEXT_LABEL[lang]);
         let queued = false;
         const paint = () => {
@@ -1944,7 +2004,7 @@ async function runTurn(li, mine, ctl, reason) {
         };
         // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it when it
         // fits the history to the model's context: no `reserveTokens` on top, or it would be subtracted twice.
-        const result = await engine.chat(history, systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn }), (tok) => {
+        const result = await engine.chat(history, systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn, apps: appTurn }), (tok) => {
           raw += tok;
           if (!queued) { queued = true; requestAnimationFrame(paint); }
         }, { signal: ctl.signal, onPrefill: (done, total) => { if (!finished && !raw) paintReading(li, done, total); } });
@@ -1957,6 +2017,21 @@ async function runTurn(li, mine, ctl, reason) {
         msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
         msg.content = stripEcho(String(result || '').trim());
         call = msg.content ? parseToolCall(msg.content) : null;
+        if (call?.tool === 'app.create') {
+          const html = String(call.args?.html || '');
+          const before = msg.content.split(/```(?:html|tool)|<!doctype html|<html[\s>]/i)[0].trim();
+          // A page that only frames a picture or a video of the chat is not an app (measured: «créame una imagen de
+          // Málaga y París juntas» made the picture and then an app around <img src="img-…">). Never built.
+          if (wrapsOnlyMedia(html)) { msg.content = before || htmlText(html) || t('anythingElse'); break; }
+          // No app asked for on this turn: the page is shown as code, with a button to build it if the user wants it.
+          if (!appTurn && html.trim()) {
+            // A plain answer wrapped in a bare page (nothing runs in it): its text, as before.
+            if (call.fromHtml && inertHtml(html)) { msg.content = before || htmlText(html); break; }
+            msg.content = (before ? before + '\n\n' : '') + '```html\n' + html.trim() + '\n```';
+            msg.offerApp = { name: cleanName(call.args?.name) || cleanName(/<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1]) || '' };
+            break;
+          }
+        }
         if (call?.fromHtml && !ASKS_APP.test(userText) && inertHtml(String(call.args?.html || ''))) {
           // What it wrote before the page, if anything, is the answer; if not, the page's own text.
           const before = msg.content.split(/```html|<!doctype html|<html[\s>]/i)[0].trim();
@@ -2137,15 +2212,6 @@ function askMemory(li, c, signal) {
   });
 }
 
-// «Memory unavailable right now · Retry», once per chat and visit: the turn goes on without memory.
-const memDownShown = new Set();
-function noteMemoryDown(li, mine) {
-  if (memDownShown.has(mine.id)) return;
-  memDownShown.add(mine.id);
-  const slot = el('div', 'mem-after');
-  li.append(slot);
-  memory.card(slot, { type: 'unavailable' });
-}
 
 
 // ---------- Sidebar drawer and apps sheet ----------
@@ -2474,7 +2540,13 @@ async function boot() {
     const li = [...ui.thread.querySelectorAll('.msg-bot')].pop();
     return li ? askMemory(li, c, new AbortController().signal) : undefined;
   });
-  memory.load().then((m) => { if (m) { paintMemToggle(); paintMine(); repaintMemCards(); } });
+  // The memory's store is asked once as soon as the page is up, before a model starts loading: its frame connects
+  // while the page is idle, instead of on the first turn, when the model's loading keeps the page busy.
+  memory.load().then((m) => {
+    if (!m) return;
+    paintMemToggle(); paintMine(); repaintMemCards();
+    if (!mirror) memory.probe().then((ok) => setMemDown(!ok), () => setMemDown(true));
+  });
   // Claw may have changed the apps or the memory in another tab: look again when this one comes back.
   addEventListener('focus', () => paintMine());
   document.addEventListener('visibilitychange', () => { if (!document.hidden) paintMine(); });
