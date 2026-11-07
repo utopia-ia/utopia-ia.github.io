@@ -95,6 +95,7 @@ const T = {
     fineMissing: (label, size) => `The first answer needs a one-time download of ${label}, ${size}. It runs on this device, and chats are kept in this browser only.`,
     fineCpu: 'This browser has no usable WebGPU, so the model runs on the processor: slower than on a graphics card.',
     thinking: 'Thinking…',
+    reading: (n) => `Reading · ${n}%`,
     reasoning: 'Reasoning',
     stopped: 'Stopped',
     cut: 'The model used its whole thinking budget before writing an answer. It can answer straight away instead, more briefly.',
@@ -206,6 +207,7 @@ const T = {
     fineMissing: (label, size) => `La primera respuesta necesita descargar una vez ${label}, ${size}. Corre en este dispositivo y las conversaciones se guardan solo en este navegador.`,
     fineCpu: 'Este navegador no tiene WebGPU utilizable, así que el modelo corre en el procesador: más despacio que en una tarjeta gráfica.',
     thinking: 'Pensando…',
+    reading: (n) => `Leyendo · ${n} %`,
     reasoning: 'Razonamiento',
     stopped: 'Parada',
     cut: 'El modelo agotó todo su margen para pensar antes de escribir la respuesta. Puede responder directamente, de forma más breve.',
@@ -556,6 +558,17 @@ function appendBot() {
   return li;
 }
 
+// While the model reads the prompt, the live pill fills with how much of it it has read. The first word repaints the
+// message and the pill goes back to «Thinking…».
+function paintReading(li, done, total) {
+  const think = li.querySelector('.think.is-live');
+  if (!think || !(total > 0)) return;
+  const n = Math.min(100, Math.floor(done / total * 100));
+  think.classList.add('is-reading');
+  think.style.setProperty('--read', n + '%');
+  think.querySelector('summary').textContent = t('reading', n);
+}
+
 // One assistant message: optional reasoning (folded), the answer, and a stamp if it was stopped.
 function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
   let think = li.querySelector('.think');
@@ -567,6 +580,7 @@ function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
       li.prepend(think);
     }
     think.classList.toggle('is-live', thinkingLive);
+    think.classList.remove('is-reading');
     think.querySelector('summary').textContent = thinkingLive ? t('thinking') : t('reasoning');
     think.querySelector('.think-body').textContent = m.thinking.trim();
   } else if (thinkingLive) {
@@ -576,6 +590,7 @@ function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
       think.innerHTML = '<summary></summary><div class="think-body"></div>';
       li.prepend(think);
     }
+    think.classList.remove('is-reading');
     think.querySelector('summary').textContent = t('thinking');
   } else if (think) think.remove();
 
@@ -880,9 +895,6 @@ async function runTool(call, ctx) {
     case 'app.create': {
       let name = cleanName(a.name);
       const html = typeof a.html === 'string' ? a.html : '';
-      // A small model often leaves the name out when it rewrites the app open in the panel: that is the one it means.
-      // With no app open, the page's <title> names it.
-      if (!name && html.trim()) name = panel.openName() || cleanName(/<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1]);
       if (!name || !html.trim()) return fail(es ? 'Falta name o html' : 'Missing name or html');
       // A model that rewrites the open app as an HTML block may change its <title>, and so its name. If an app is
       // open and the user asked for a change (and not for a new app), the new version replaces the open one.
@@ -912,17 +924,6 @@ async function runTool(call, ctx) {
     }
     case 'app.open': {
       const name = cleanName(a.name);
-      // No name while an app is open ("fix it", "what does it do"): the model wants that app. It reads its HTML and how
-      // to save a new version, and the turn goes on, instead of an error the visitor cannot act on.
-      if (!name && panel.openName()) {
-        const open = panel.openName();
-        const err = panel.lastError();
-        const text = es
-          ? `La app «${open}» está abierta en el panel${err ? ` y da este error: ${err}` : ''}. Su HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nPara cambiarla o arreglarla, llama a app.create con name «${open}» y el HTML completo nuevo.`
-          : `The app “${open}” is open in the panel${err ? ` and shows this error: ${err}` : ''}. Its HTML:\n\`\`\`html\n${panel.openHtml() || ''}\n\`\`\`\nTo change or fix it, call app.create with name “${open}” and the whole new HTML.`;
-        ctx.summary.name = open;
-        return { text, result: { name: open, saved: true } };
-      }
       if (!name) return fail(es ? 'Falta name' : 'Missing name');
       try {
         const app = await bridge.call('apps.get', { name });
@@ -1517,7 +1518,7 @@ async function runTurn(li, mine, ctl, reason) {
       const result = await engine.chat(history, systemPrompt(lang, memPrompt, { web: !mirror }), (tok) => {
         raw += tok;
         if (!queued) { queued = true; requestAnimationFrame(paint); }
-      }, { signal: ctl.signal });
+      }, { signal: ctl.signal, onPrefill: (done, total) => { if (!finished && !raw) paintReading(li, done, total); } });
       finished = true;
       const p = reason === false ? { thinking: '', content: raw } : split(raw);
       msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);

@@ -53,7 +53,9 @@ async function atiende(d) {
       sesion = creaSesionCpu(modelo, { contextLen: d.ctx });
       self.postMessage({ op: 'listo', resumen: sesion.state.summary(), vocab: modelo.vocab });
     } else if (d.op === 'forward') {
-      const r = await sesion.forward(d.ids, {});
+      // El avance de un prompt largo, lote a lote: en la CPU es la espera más
+      // larga de todas, y la página la enseña.
+      const r = await sesion.forward(d.ids, d.ids.length > 1 ? { onProgress: (h) => self.postMessage({ op: 'avance', id: d.id, h }) } : {});
       self.postMessage({ op: 'logits', id: d.id, logits: r.logits }, [r.logits.buffer]);
       // Con perfil: el del prompt en cuanto acaba, el de la generación cada 32 tokens.
       if (globalThis.__ELFFUSS_CPU_PERFIL && (d.ids.length > 1 || ++genPerfil % 32 === 0)) {

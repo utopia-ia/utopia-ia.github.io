@@ -216,6 +216,7 @@ body { overflow: hidden; background: var(--ef-wall); }
 .think[open] summary::before { transform: rotate(45deg); }
 .think.is-live summary { border-color: var(--ef-ink); color: var(--ef-ink); background: linear-gradient(90deg, var(--ef-tape-soft), var(--ef-wall) 60%) 0 0 / 200% 100%; animation: sweep 1.6s var(--ef-ease) infinite; }
 @keyframes sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.think.is-live.is-reading summary { animation: none; font-variant-numeric: tabular-nums; background: linear-gradient(90deg, var(--ef-tape-soft) var(--read, 0%), var(--ef-wall) var(--read, 0%)); }
 .think-body { margin-top: var(--ef-s2); padding: var(--ef-s2) 0 var(--ef-s2) var(--ef-s3); border-left: 1px solid var(--ef-steel); color: var(--ef-graphite); font-size: var(--ef-text-sm); white-space: pre-wrap; max-height: 16rem; overflow-y: auto; }
 
 .stamp {

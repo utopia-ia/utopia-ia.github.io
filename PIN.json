@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "011a42dde85e78b0b06e2e2ad61dca467be5d072",
-    "engineCommit": "c402a8692977e4e017e3c6e3fa6f42ad05a05fbc",
+    "commit": "09ad07773e11639cb3154e535a229ed2b503918b",
+    "engineCommit": "4cff17647fda0ba679dadfef7cf74102b80cce49",
     "dir": "js",
     "files": [
       {
@@ -16,7 +16,7 @@
       {
         "from": "js/cpu-jefe.js",
         "to": "engine/cpu-jefe.js",
-        "sha256": "18fbf92a711e81f6e0d5077b71987a948d8fc84d13e653d76e453b8ecb569f57"
+        "sha256": "4b0865d55ece939cde2004ec385bc79bc0f403412a3f5306d05d2b3cac2bcf24"
       },
       {
         "from": "js/cpu-kernels.js",
@@ -26,7 +26,7 @@
       {
         "from": "js/cpu-proxy.js",
         "to": "engine/cpu-proxy.js",
-        "sha256": "aef39a4fd49f60e209154e309fb3c3f0d23a15eed847ae818c24ea08251aa8ab"
+        "sha256": "a952ba9173bd55a0c1c45a084bdf6f57f6b2c0881656dff31f4fe9afaa80af45"
       },
       {
         "from": "js/cpu-trabajo.js",

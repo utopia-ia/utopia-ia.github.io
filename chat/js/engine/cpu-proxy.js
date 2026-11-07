@@ -20,6 +20,7 @@ export async function creaSesionCpuRemota(ranged, { contextLen, hilos = 0, onPro
     } else if (d.op === 'progreso') onProgress(d.h, d.t);
     else if (d.op === 'perfil') console.log('[engine] PERFIL CPU ' + JSON.stringify(d.datos));
     else if (d.op === 'listo') { resumen = d.resumen; alListo?.ok(d); }
+    else if (d.op === 'avance') esperando.get(d.id)?.avance?.(d.h);
     else if (d.op === 'logits') { const p = esperando.get(d.id); esperando.delete(d.id); p?.ok(d.logits); }
     else if (d.op === 'error') {
       const err = new Error(d.msg);
@@ -71,13 +72,13 @@ export async function creaSesionCpuRemota(ranged, { contextLen, hilos = 0, onPro
     state,
     cpu: true,
     recycle() {},
-    async forward(ids, { signal } = {}) {
+    async forward(ids, { signal, onProgress } = {}) {
       if (state.nPast + ids.length > contextLen) {
         throw new Error(`la caché se llena: ${state.nPast + ids.length} tokens sobre ${contextLen} de contexto`);
       }
       const id = ++seq;
       const logits = await new Promise((ok, mal) => {
-        esperando.set(id, { ok, mal });
+        esperando.set(id, { ok, mal, avance: typeof onProgress === 'function' ? onProgress : null });
         w.postMessage({ op: 'forward', id, ids: Array.from(ids) });
       });
       state.nPast += ids.length;
