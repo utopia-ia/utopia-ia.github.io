@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "09ad07773e11639cb3154e535a229ed2b503918b",
-    "engineCommit": "4cff17647fda0ba679dadfef7cf74102b80cce49",
+    "commit": "693fc9b9717e3d29dc33db212eda78485d9a2c96",
+    "engineCommit": "17e2ae28dd9e7f48d140af00d0a979dce76cc514",
     "dir": "js",
     "files": [
       {
@@ -151,7 +151,7 @@
       {
         "from": "js/memory-store.js",
         "to": "engine/memory-store.js",
-        "sha256": "f64667ce1b83aa2efc7f36751552e3203a70763b4c5c91aa8d41843f4dc3d636"
+        "sha256": "01699643a0cda51ee0cfb54d87433615c3a70304508bd4096042e43e0e18b797"
       },
       {
         "from": "js/memory-text.js",
@@ -171,7 +171,7 @@
       {
         "from": "js/memory.js",
         "to": "engine/memory.js",
-        "sha256": "1ecc23e0e32df7f1ff24f5c87024a24d906d3a75a010e054661c866d531b1558"
+        "sha256": "5275377aed6239526db02470fc720470776066496477bfb125748028e08a675d"
       },
       {
         "from": "js/model.js",
@@ -211,7 +211,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "32c5a9beb50ae9442fdf5777a85fb45be91526b817a8be46f0df004fa3c9e44f"
+        "sha256": "8ed975a3c097458efdbad0d29b0d4cfee8f8049077a5a148cb622231ae676614"
       },
       {
         "from": "js/quant-tables.js",

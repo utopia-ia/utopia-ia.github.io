@@ -3,35 +3,28 @@
 // Chats, kept in this browser only (IndexedDB). Nothing here is sent anywhere. If the browser refuses storage
 // (some private windows), the chats live in memory for this visit and `persistent` says so.
 
+import { connection, transaction } from './idb.js';
+
 const DB = 'elffuss-home';
 const STORE = 'chats';
-let dbp = null;
 const memory = new Map();
 export let persistent = true;
 
-function open() {
-  if (dbp) return dbp;
-  dbp = new Promise((resolve) => {
-    let req;
-    try { req = indexedDB.open(DB, 1); } catch { persistent = false; resolve(null); return; }
-    req.onupgradeneeded = () => { req.result.createObjectStore(STORE, { keyPath: 'id' }); };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => { persistent = false; resolve(null); };
-    req.onblocked = () => { persistent = false; resolve(null); };
-  });
-  return dbp;
-}
+// Reopened if the browser closes it (see idb.js).
+const withDb = connection(() => new Promise((resolve) => {
+  let req;
+  try { req = indexedDB.open(DB, 1); } catch { persistent = false; resolve(null); return; }
+  req.onupgradeneeded = () => { req.result.createObjectStore(STORE, { keyPath: 'id' }); };
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => { persistent = false; resolve(null); };
+  req.onblocked = () => { persistent = false; resolve(null); };
+}));
 
 function run(mode, fn) {
-  return open().then((db) => {
-    if (!db) return fn(null);
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, mode);
-      const out = fn(tx.objectStore(STORE));
-      tx.oncomplete = () => resolve(out && 'result' in out ? out.result : undefined);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
+  return withDb((db) => {
+    if (db) return transaction(db, STORE, mode, fn);
+    const out = fn(null);
+    return out && 'result' in out ? out.result : undefined;
   });
 }
 
