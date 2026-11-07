@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "6f9ce12a13622491e2ec43b4673d411afad92542",
-    "engineCommit": "37973b23bf652ced5c960914246b705919a06865",
+    "commit": "ada6c051dd1bd7c63ae6c6549666b3027b59a851",
+    "engineCommit": "2615724d26d0c71d529a2d5d9fb2959ad3e8992d",
     "dir": "js",
     "files": [
       {
@@ -171,7 +171,7 @@
       {
         "from": "js/memory.js",
         "to": "engine/memory.js",
-        "sha256": "5275377aed6239526db02470fc720470776066496477bfb125748028e08a675d"
+        "sha256": "92bbb1a6f13aa1d3fb82263b7233f500f576dd69573dd888d129af7c28a1db4a"
       },
       {
         "from": "js/model.js",
@@ -186,7 +186,7 @@
       {
         "from": "js/ops.fusion.js",
         "to": "engine/ops.fusion.js",
-        "sha256": "c24c0e6cbe988b8b6f3931a798fe71b8042fce5b17bc4fb2fe4dd2717f935dc9"
+        "sha256": "6c522144716d02198d02caf2994be3dab4e3072f1a796c99aa173a389e230c3d"
       },
       {
         "from": "js/ops.gemm2.js",
@@ -211,7 +211,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "15e6acf1e1e2d9e519d4ddf9ab231d00e80445086ad1dff259dc72700dbcd37f"
+        "sha256": "cb7228674a89161737b0b56f766bf5c1169c7a32a537ea1fb42bb8ad0b94700c"
       },
       {
         "from": "js/quant-tables.js",
@@ -221,7 +221,7 @@
       {
         "from": "js/registro.js",
         "to": "engine/registro.js",
-        "sha256": "ece802b4db63e7b8cf1a7439351f0718a698b285e5c9e218890bf8517d15ace5"
+        "sha256": "a70b371bb204682023b8e0a46b8d49ac110ff696f3442ee57d13ee8d61723fa7"
       },
       {
         "from": "js/repack.js",

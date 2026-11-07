@@ -747,7 +747,12 @@ export async function load(onProgress = () => {}) {
       // El lote del prefill es del MODELO: 32 por defecto (el bucle recurrente
       // del SSM corre entero dentro de un despacho y un lote largo cuelga el
       // escritorio); el registro lo sube donde no hay ese bucle.
-      _setLote(m.lote || 32);
+      // `loteOrdenador` es para donde la memoria de la pestaña no aprieta: con
+      // subgrupos (el teléfono no los tiene; ver la tesela de arriba) y sin
+      // agente de móvil, que hay móviles con subgrupos.
+      const movil = globalThis.navigator?.userAgentData?.mobile === true
+        || /Mobi/i.test(globalThis.navigator?.userAgent || '');
+      _setLote((m.loteOrdenador && gpu?.subgroupSize && !movil) ? m.loteOrdenador : (m.lote || 32));
       pensante = /<think>/.test(String(info.meta['tokenizer.chat_template'] || ''));
       formato = formatoDePlantilla(info.meta['tokenizer.chat_template'], tk, info.meta['general.architecture']);
 
