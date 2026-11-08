@@ -538,9 +538,14 @@ async function pickGpu() {
 // embed the shared model store or the shared memory, which live on other sites: the model is kept in this site's own
 // store (one more download, once) and the memory stays off. Returns true when the page is about to reload isolated.
 const COI_TRIED = 'elffuss.coi.tried';
-// Off until a real tablet confirms it: on the first try the tab started over while loading the model (?coi=1 turns it
-// on for testing).
-const ISOLATE_CPU = /[?&]coi=1(&|$)/.test(location.search);
+// On by default on computers only: there the CPU path with 8 threads read a ~1,200-token prompt ×6 faster and wrote
+// ×3.5 faster than with one, the same text. Off on phones and tablets (an iPad says it is a Mac, so a touch screen
+// counts as a tablet) and on devices that report under 8 GB: on the first tablet try the tab started over while
+// loading the model. ?coi=1 turns it on anywhere, for testing.
+const TABLET = matchMedia('(max-width: 820px)').matches || matchMedia('(pointer: coarse)').matches ||
+  navigator.maxTouchPoints > 1 || navigator.userAgentData?.mobile === true || /Mobi/i.test(navigator.userAgent);
+const ISOLATE_CPU = /[?&]coi=1(&|$)/.test(location.search) ||
+  (!TABLET && !((navigator.deviceMemory || 8) < 8));
 async function isolateForCpu() {
   const sw = navigator.serviceWorker;
   if (!sw) return false;
