@@ -52,8 +52,11 @@ async function aislar() {
   try {
     await navigator.serviceWorker.register(new URL('../coi-sw.js', location.href), { scope: new URL('../', location.href).pathname });
     await navigator.serviceWorker.ready;
+    if (sessionStorage.getItem('banco-v2-recargada')) return false;   // ya se intentó: no recargar en bucle
+    sessionStorage.setItem('banco-v2-recargada', '1');
     sessionStorage.setItem('banco-v2-seguir', '1');
     location.reload();
+    return 'recargando';
   } catch (e) { out('no se pudo aislar la página (la CPU irá con un hilo): ' + e.message); }
   return false;
 }
@@ -216,9 +219,14 @@ async function todo() {
   }
 }
 
-$('go').onclick = async () => { $('out').textContent = ''; if (await aislar()) await todo(); };
+$('go').onclick = async () => { $('out').textContent = ''; if ((await aislar()) !== 'recargando') await todo(); };
 $('copiar').onclick = async () => { await navigator.clipboard.writeText($('out').textContent); $('copiar').textContent = 'Copiado'; };
-if (sessionStorage.getItem('banco-v2-seguir') && self.crossOriginIsolated) { sessionStorage.removeItem('banco-v2-seguir'); todo(); }
+// Tras la recarga sigue sola, aislada o no: sin aislar, la CPU va con un hilo y se dice.
+if (sessionStorage.getItem('banco-v2-seguir')) {
+  sessionStorage.removeItem('banco-v2-seguir');
+  if (!self.crossOriginIsolated) out('la página no quedó aislada: la CPU va con un hilo');
+  todo();
+}
 </script>
 </body>
 </html>
