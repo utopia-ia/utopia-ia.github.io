@@ -64,6 +64,11 @@
 <a class="skip" href="#composer-input"><span data-l="en">Skip to the message box</span><span data-l="es" lang="es">Saltar al cuadro de mensaje</span></a>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="t-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9.5" r="1.75"/><path d="M21 15.5l-4.5-4.5L7 20.5"/></symbol>
+  <symbol id="t-video" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10.25 9.25v5.5l4.75-2.75z"/></symbol>
+  <symbol id="t-audio" viewBox="0 0 24 24"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 10.5v3"/></symbol>
+  <symbol id="t-translator" viewBox="0 0 24 24"><path d="M3.5 5.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9l-3 2.5v-2.5h-.5a2 2 0 0 1-2-2z"/><path d="M11.5 14.5v.5a2 2 0 0 0 2 2H16l3 2.5V17h-.5a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-2"/></symbol>
+  <symbol id="t-copilot" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.5" cy="10.5" r="2"/><path d="M5.5 16c.6-1.5 1.7-2.25 3-2.25s2.4.75 3 2.25M14 9.5h4M14 12.5h4M14 15.5h2.5"/></symbol>
   <symbol id="i-tag" viewBox="0 0 32 32"><path fill-rule="evenodd" d="M3 16 10.6 6.5H27.5A2 2 0 0 1 29.5 8.5V23.5A2 2 0 0 1 27.5 25.5H10.6ZM14.2 16a2.7 2.7 0 1 1-5.4 0 2.7 2.7 0 0 1 5.4 0Z"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-sidebar" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></symbol>
@@ -114,17 +119,25 @@
       <button class="mem-link" id="mem-link" type="button" aria-haspopup="dialog" hidden><svg class="ic" aria-hidden="true"><use href="#i-note"/></svg><span id="mem-count"></span></button>
     </section>
 
-    <nav class="apps" id="apps-nav" aria-labelledby="apps-h">
+    <nav class="apps" id="apps-nav" aria-labelledby="tools-h">
+      <div class="app-groups">
+      <h2 class="side-h" id="tools-h"><span data-l="en">Tools</span><span data-l="es" lang="es">Herramientas</span></h2>
+      <ul class="app-list tool-list">
+        <li><a class="app-link tool-link" href="https://image.elffuss.com/"><svg class="tool-icon" aria-hidden="true"><use href="#t-image"/></svg><span class="app-name" translate="no"><span data-l="en">Image</span><span data-l="es" lang="es">Imagen</span></span><span class="app-line"><span data-l="en">Make and edit pictures</span><span data-l="es" lang="es">Crea y edita imágenes</span></span></a></li>
+        <li><a class="app-link tool-link" href="https://video.elffuss.com/"><svg class="tool-icon" aria-hidden="true"><use href="#t-video"/></svg><span class="app-name" translate="no"><span data-l="en">Video</span><span data-l="es" lang="es">Vídeo</span></span><span class="app-line"><span data-l="en">Video from a text or a photo</span><span data-l="es" lang="es">Vídeo desde un texto o una foto</span></span></a></li>
+        <li><a class="app-link tool-link" href="https://audio.elffuss.com/"><svg class="tool-icon" aria-hidden="true"><use href="#t-audio"/></svg><span class="app-name" translate="no">Audio</span><span class="app-line"><span data-l="en">Music, sound effects and voices</span><span data-l="es" lang="es">Música, efectos y voces</span></span></a></li>
+        <li><a class="app-link tool-link" href="https://translator.elffuss.com"><svg class="tool-icon" aria-hidden="true"><use href="#t-translator"/></svg><span class="app-name" translate="no">Translator</span><span class="app-line"><span data-l="en">Translates a conversation aloud</span><span data-l="es" lang="es">Traduce una conversación en voz alta</span></span></a></li>
+        <li><a class="app-link tool-link" href="https://copilot.elffuss.com"><svg class="tool-icon" aria-hidden="true"><use href="#t-copilot"/></svg><span class="app-name" translate="no"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></span><span class="app-line"><span data-l="en">Turns a call into a customer record</span><span data-l="es" lang="es">Convierte una llamada en una ficha</span></span></a></li>
+      </ul>
+      <a class="all-apps all-tools" href="https://tools.elffuss.com"><span data-l="en">All tools</span><span data-l="es" lang="es">Todas las herramientas</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       <h2 class="side-h" id="apps-h">Apps</h2>
       <ul class="app-list">
         <li><a class="app-link" style="--c: var(--ef-claw)" href="https://claw.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Claw</span><span class="app-line"><span data-l="en">Builds small apps from a chat</span><span data-l="es" lang="es">Construye pequeñas apps desde un chat</span></span></a></li>
         <li><a class="app-link" style="--c: var(--ef-code)" href="https://code.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Code</span><span class="app-line"><span data-l="en">Edits your project with you</span><span data-l="es" lang="es">Edita tu proyecto contigo</span></span></a></li>
-        <li><a class="app-link" style="--c: var(--ef-translator)" href="https://translator.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Translator</span><span class="app-line"><span data-l="en">Translates a conversation aloud</span><span data-l="es" lang="es">Traduce una conversación en voz alta</span></span></a></li>
-        <li><a class="app-link" style="--c: var(--ef-copiloto)" href="https://copilot.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no"><span data-l="en">Copilot</span><span data-l="es" lang="es">Copiloto</span></span><span class="app-line"><span data-l="en">Turns a call into a customer record</span><span data-l="es" lang="es">Convierte una llamada en una ficha</span></span></a></li>
-        <li><a class="app-link" style="--c: var(--ef-graphite)" href="https://tools.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no"><span data-l="en">Tools</span><span data-l="es" lang="es">Herramientas</span></span><span class="app-line"><span data-l="en">Every Elffuss tool in one place</span><span data-l="es" lang="es">Todas las herramientas de Elffuss en un solo sitio</span></span></a></li>
         <li><a class="app-link" style="--c: var(--ef-braid)" href="https://braid.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Braid</span><span class="app-line"><span data-l="en">Version control for many agents</span><span data-l="es" lang="es">Control de versiones para muchos agentes</span></span></a></li>
       </ul>
       <a class="all-apps" href="/apps/"><span data-l="en">All apps</span><span data-l="es" lang="es">Todas las apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
     </nav>
 
     <button class="all-apps install-entry" id="install-entry" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-down"/></svg><span data-l="en">Install Elffuss as an app</span><span data-l="es" lang="es">Instalar Elffuss como app</span></button>
@@ -225,7 +238,7 @@
 
 <dialog class="sheet" id="apps-sheet" aria-labelledby="sheet-h">
   <div class="sheet-head">
-    <h2 id="sheet-h">Apps</h2>
+    <h2 id="sheet-h"><span data-l="en">Tools and apps</span><span data-l="es" lang="es">Herramientas y apps</span></h2>
     <button class="icon-btn" type="button" data-close-apps aria-label="Close" data-aria-en="Close" data-aria-es="Cerrar"><svg class="ic"><use href="#i-close"/></svg></button>
   </div>
   <div id="sheet-body"></div>

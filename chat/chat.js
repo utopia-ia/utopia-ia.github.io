@@ -2695,7 +2695,10 @@ $('install-entry')?.addEventListener('click', () => closeSide());
 function appListClone() {
   const frag = document.createDocumentFragment();
   const nav = $('apps-nav');
-  frag.append(nav.querySelector('.app-list').cloneNode(true), nav.querySelector('.all-apps').cloneNode(true));
+  // Both groups, tools first and then the apps, each with its «all» link; the ids of the headings are not copied.
+  const groups = nav.querySelector('.app-groups').cloneNode(true);
+  for (const el of groups.querySelectorAll('[id]')) el.removeAttribute('id');
+  frag.append(groups);
   return frag;
 }
 
