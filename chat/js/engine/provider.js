@@ -78,7 +78,7 @@ export let name = 'Elffuss Engine · WebGPU';
 //     Si su kernel falla en un dispositivo, el turno sigue por el camino de
 //     siempre y se apaga para ese modelo (ver el bucle de `chat()`).
 export const RAPIDO_LFM3 = Object.freeze(['__ELFFUSS_GEMV2', '__ELFFUSS_GEMM2', '__ELFFUSS_GEMM2_COLA',
-  '__ELFFUSS_FLASH', '__ELFFUSS_FUSION', '__ELFFUSS_REPACK', '__ELFFUSS_TOPK_GPU']);
+  '__ELFFUSS_FLASH', '__ELFFUSS_FUSION', '__ELFFUSS_REPACK', '__ELFFUSS_TOPK_GPU', '__ELFFUSS_GEMM2_Q4']);
 const puestosRapido = new Set();
 export function aplicaRapido(arch, g = globalThis) {
   for (const k of puestosRapido) if (g[k] === true) delete g[k];
