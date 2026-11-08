@@ -4,7 +4,8 @@
 // of the chat that can be widened or narrowed and taken full screen; on a phone it opens over the chat as a sheet with
 // a close button.
 //
-// The app runs in a sandboxed frame from a srcdoc, never with this page's origin: no allow-same-origin, so it cannot
+// The app runs in a sandboxed frame (written into /chat/sandbox/run.html, sandbox-frame.js: a srcdoc would inherit
+// this page's policy, which runs no inline script), never with this page's origin: no allow-same-origin, so it cannot
 // read this page, its storage or Claw's; no popups and no navigation of this page. Claw's viewer allows scripts,
 // forms, modals, popups and downloads; this one drops popups and downloads, and adds a Content-Security-Policy that
 // is the first thing in the document, before any of the app's own markup: no network at all (connect, images, fonts
@@ -12,6 +13,7 @@
 
 import { clawAppUrl } from './bridge.js';
 import { mirror } from './mirror.js';
+import { setFrameHtml } from './sandbox-frame.js';
 
 export const SANDBOX = 'allow-scripts allow-forms allow-modals';
 export const CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; " +
@@ -87,7 +89,7 @@ export function show(app, { from = null } = {}) {
   ui.name.textContent = app.name;
   ui.frame.title = app.name;
   ui.err.hidden = true;
-  ui.frame.srcdoc = withCsp(app.html);
+  setFrameHtml(ui.frame, withCsp(app.html));
   paintState();
   ui.panel.hidden = false;
   ui.app.classList.add('has-panel');
@@ -110,7 +112,7 @@ export function close() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   setMax(false);
   current = null;
-  ui.frame.srcdoc = '';
+  setFrameHtml(ui.frame, '');
   ui.panel.hidden = true;
   ui.app.classList.remove('has-panel');
   document.body.classList.remove('panel-sheet');

@@ -8,21 +8,7 @@
 <link rel="alternate" hreflang="en" href="https://elffuss.com/">
 <link rel="alternate" hreflang="es" href="https://elffuss.com/?lang=es">
 <link rel="alternate" hreflang="x-default" href="https://elffuss.com/">
-<script>
-/* Language before first paint: ?lang=, then the saved choice, then a browser language starting with "es", then English.
-   The Spanish URL (?lang=es) is its own canonical, so Spanish keeps an indexable address. */
-(function () {
-  var d = document.documentElement, l = null, q = null;
-  function ok(v) { return v === 'en' || v === 'es' ? v : null; }
-  try { q = l = ok(new URLSearchParams(location.search).get('lang')); } catch (e) {}
-  if (!l) { try { l = ok(localStorage.getItem('elffuss-lang')); } catch (e) {} }
-  if (!l) { l = (navigator.language || '').toLowerCase().indexOf('es') === 0 ? 'es' : 'en'; }
-  d.lang = l;
-  d.className += ' js';
-  if (l === 'es') document.title = 'Elffuss · Chatea con una IA que corre en tu navegador';
-  if (q === 'es') { var c = document.querySelector('link[rel="canonical"]'); if (c) c.href = 'https://elffuss.com/?lang=es'; }
-})();
-</script>
+<script src="/chat/lang-boot.js"></script>
 <meta name="description" content="A chat answered by an AI model that runs inside your browser tab through WebGPU, on your own device: no account, no API key, and your messages stay on your device unless you ask it to search the web. Plus the Elffuss apps: Claw, Code, Translator, Copilot, the tools and Braid.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#303752">
@@ -253,6 +239,6 @@
   <div id="mem-sheet-body"></div>
 </dialog>
 
-<script type="module" src="/chat/chat.js?v=9d02d9b2fe8a"></script>
+<script type="module" src="/chat/chat.js?v=e802ed1a46f7"></script>
 </body>
 </html>
