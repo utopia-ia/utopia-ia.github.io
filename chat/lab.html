@@ -130,7 +130,37 @@ async function perfil(t) {
   } finally { quita(); }
 }
 
+// El techo: cuántos GB/s lee la gráfica de un búfer grande (lo mismo que hace el GEMV al escribir, sin cuentas).
+async function ancho(t) {
+  if (prov) { await prov.unload(); prov = null; }
+  const a = await navigator.gpu.requestAdapter();
+  const dev = await a.requestDevice({ requiredLimits: { maxStorageBufferBindingSize: a.limits.maxStorageBufferBindingSize, maxBufferSize: a.limits.maxBufferSize } });
+  const MB = Math.min(t.mb || 1024, Math.floor(a.limits.maxStorageBufferBindingSize / 2 ** 20) - 8);
+  const n4 = MB * 2 ** 20 / 16, buf = dev.createBuffer({ size: n4 * 16, usage: GPUBufferUsage.STORAGE });
+  const filas = [];
+  for (const wg of t.wg || [64, 128, 256]) {
+    const grupos = Math.min(65535, Math.ceil(n4 / wg / 16));
+    const code = `@group(0) @binding(0) var<storage, read> b : array<vec4<u32>>;
+@group(0) @binding(1) var<storage, read_write> o : array<u32>;
+@compute @workgroup_size(${wg}) fn main(@builtin(global_invocation_id) g : vec3<u32>, @builtin(num_workgroups) nw : vec3<u32>) {
+  var acc = vec4<u32>(0u); let paso = nw.x * ${wg}u;
+  for (var i = g.x; i < ${n4}u; i = i + paso) { acc = acc ^ b[i]; }
+  if (all(acc == vec4<u32>(1234567u))) { o[0] = 1u; }
+}`;
+    const pipe = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const out = dev.createBuffer({ size: 16, usage: GPUBufferUsage.STORAGE });
+    const bg = dev.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: buf } }, { binding: 1, resource: { buffer: out } }] });
+    const corre = async (veces) => { const e = dev.createCommandEncoder(); const p = e.beginComputePass(); p.setPipeline(pipe); p.setBindGroup(0, bg); for (let i = 0; i < veces; i++) p.dispatchWorkgroups(grupos); p.end(); dev.queue.submit([e.finish()]); await dev.queue.onSubmittedWorkDone(); };
+    await corre(2);
+    const ts = []; for (let r = 0; r < 5; r++) { const t0 = performance.now(); await corre(4); ts.push(performance.now() - t0); }
+    filas.push(`  grupo ${wg}: ${(4 * MB / 1024 / (med(ts) / 1000)).toFixed(1)} GB/s`);
+  }
+  buf.destroy(); dev.destroy();
+  return `lectura de ${MB} MB en la gráfica:\n` + filas.join('\n');
+}
+
 async function ejecuta(t) {
+  if (t.tipo === 'ancho') return await ancho(t);
   if (t.tipo === 'info') return await info();
   if (t.tipo === 'lfm3') return await lfm3(t);
   if (t.tipo === 'perfil') return await perfil(t);
