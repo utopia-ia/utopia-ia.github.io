@@ -498,6 +498,9 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 }
 .building::before { content: ""; width: 26px; height: 8px; border-radius: var(--ef-r-pill); background: repeating-linear-gradient(-45deg, var(--ef-tape) 0 5px, var(--ef-ink) 5px 10px) 0 0 / 28px 100%; animation: tape 0.9s linear infinite; }
 @keyframes tape { to { background-position: 28px 0; } }
+/* A web call that is still running: which address it reads, with the same moving tape. */
+.tc-live { display: inline-flex; align-items: center; gap: 8px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.tc-live::before { content: ""; flex: none; width: 22px; height: 6px; border-radius: var(--ef-r-pill); background: repeating-linear-gradient(-45deg, var(--ef-tape) 0 5px, var(--ef-ink) 5px 10px) 0 0 / 28px 100%; animation: tape 0.9s linear infinite; }
 
 /* The permission question: the same plate as the download card. */
 .ask {

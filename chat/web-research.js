@@ -11,6 +11,9 @@
 //   terms, buildBM25       acer-core.js's tokenizer and BM25: the same retrieval the memory and the history use
 //   Readability            optional: vendor/readability.js (Mozilla, Apache-2.0); without it a simpler extractor runs
 //
+// Every method also takes `onProgress({ url, n, of })`: called as each request leaves (n of at most `of`), for the
+// app's card. A call never waits longer than LIMITS.callMs (see `session`).
+//
 // What it never does: send a cookie, a header of the user or a form by POST; log in; run a page's JavaScript; follow
 // a link to another site during a crawl; read what robots.txt closes to it when IT chose the address (crawl, site
 // search, the pages a search reads by itself). An address the user or the model gave to web.fetch is read like a
@@ -28,6 +31,11 @@ export const LIMITS = {
   perPage: 900,       // passages of each page a search read by itself
   chunk: 700,         // target size of a passage
   thinBelow: 400,     // characters of content under which a page counts as a shell and its data is read instead
+  // Time. A request that has not answered (headers AND body) in requestMs is given up, whatever get() does with its
+  // signal; a tool call ends at callMs with what it has by then (the results found, the pages already read). On a
+  // phone a search that read two slow pages took minutes with nothing on screen, and the visitor took it for a hang.
+  requestMs: 20000,
+  callMs: 40000,
 };
 export const AGENT = 'elffuss';   // the robots.txt product token; the proxy's User-Agent is «Mozilla/5.0 (Elffuss)»
 
@@ -793,6 +801,23 @@ export function knownSearch(site, query) {
 
 // ---------------------------------------------------------------- the research session
 
+const budgetError = () => Object.assign(new Error('budget'), { code: 'budget' });
+const abortError = () => Object.assign(new Error('stopped'), { name: 'AbortError' });
+
+// Pages a search does not read by itself: maps, social networks and the big review sites answer the proxy with a
+// refusal (403), a captcha or a page built by JavaScript, so reading them costs a request and seconds for nothing.
+// Their result's title and snippet (names, addresses, ratings) are what the model gets; an address given to
+// web.fetch is still read.
+const UNREADABLE = /(^|\.)(goo\.gl|g\.page|yelp\.[a-z.]+|tripadvisor\.[a-z.]+|paginasamarillas\.es|facebook\.com|instagram\.com|tiktok\.com|x\.com|twitter\.com|linkedin\.com|youtube\.com|pinterest\.[a-z.]+|foursquare\.com|thefork\.[a-z.]+|eltenedor\.es|groupon\.[a-z.]+)$/i;
+export const unreadable = (url) => {
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  const h = u.hostname.toLowerCase();
+  // Google's documents (docs., sites., books.) are pages; its maps and its searches are not.
+  if (/(^|\.)google\.[a-z.]+$/.test(h)) return /^maps\./.test(h) || (/^(www\.)?google\./.test(h) && /^\/(maps|search|url|travel|localservices)\b/.test(u.pathname));
+  return UNREADABLE.test(h);
+};
+
 // `searchEngine`, optional: { url(query) → the address the words go to (for the card), run(query, { signal }) →
 // parseSearx's shape, throwing on 429 or failure }. Without it (or when it fails, says 429 or finds nothing) the
 // search goes to DuckDuckGo through the proxy: html and lite without an engine, lite alone as the fallback.
@@ -801,20 +826,54 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
   const robotsCache = new Map();   // origin → parsed robots.txt (or null: none), for as long as the page lives
   const R = { terms, buildBM25 };
 
-  function session(signal) {
-    const s = { sent: [], signal, left: L.requests, notes: [] };
+  // One tool call. `s.signal` aborts when the caller stops (`stopped()`: that is rethrown everywhere) or when the call
+  // runs out of time (`timedOut`: then the budget is spent, the request in flight is dropped, and every step returns
+  // what it has, as when the request budget runs out). Each request is raced against requestMs and against the call's
+  // own signal, so neither a get() that ignores its signal nor a body that never ends can keep a call waiting.
+  function session(signal, onProgress = null) {
+    const ctl = new AbortController();
+    const s = { sent: [], signal: ctl.signal, left: L.requests, notes: [], timedOut: false };
+    const onStop = () => ctl.abort();
+    if (signal?.aborted) ctl.abort(); else signal?.addEventListener('abort', onStop, { once: true });
+    s.stopped = () => !!signal?.aborted;
+    s.expire = () => {
+      if (s.timedOut || s.stopped()) return;
+      s.timedOut = true; s.left = 0; s.notes.push({ timeout: L.callMs });
+      ctl.abort();
+    };
+    const deadline = setTimeout(s.expire, L.callMs);
+    s.end = () => { clearTimeout(deadline); signal?.removeEventListener('abort', onStop); };
+    // A step that cannot go on: the caller's stop is rethrown; out of budget or out of time, the step ends quietly.
+    s.over = (e) => { if (s.stopped()) throw e; return e?.code === 'budget' || s.timedOut; };
+    s.progress = (url) => { try { onProgress?.({ url, n: s.sent.length, of: L.requests }); } catch { /* the app's card: never the call's problem */ } };
+    s.race = (work, url = '') => {
+      if (ctl.signal.aborted) return Promise.reject(s.timedOut ? budgetError() : abortError());
+      const rc = new AbortController();
+      let timer = null, onAbort = null;
+      const settle = new Promise((_, reject) => {
+        timer = setTimeout(() => { if (url) s.notes.push({ slow: url }); reject(Object.assign(new Error('timeout'), { code: 'timeout' })); rc.abort(); }, L.requestMs);
+        onAbort = () => { reject(s.timedOut ? budgetError() : abortError()); rc.abort(); };
+        ctl.signal.addEventListener('abort', onAbort, { once: true });
+      });
+      return Promise.race([Promise.resolve().then(() => work(rc.signal)), settle])
+        .finally(() => { clearTimeout(timer); ctl.signal.removeEventListener('abort', onAbort); });
+    };
     s.fetch = async (url) => {
-      if (s.left <= 0) { const e = new Error('budget'); e.code = 'budget'; throw e; }
+      if (s.left <= 0) throw budgetError();
       s.left--;
       s.sent.push(url);
-      return get(url, { signal });
+      s.progress(url);
+      return s.race((sig) => get(url, { signal: sig }), url);
     };
     return s;
   }
+  // The caller's work for one call, always with its timer cleared.
+  const bounded = async (s, work) => { try { return await work(); } finally { s.end(); } };
 
   async function robotsFor(s, url) {
     const origin = new URL(url).origin;
     if (robotsCache.has(origin)) return robotsCache.get(origin);
+    if (s.robots?.has(origin)) return s.robots.get(origin);
     let parsed = null;
     try {
       const r = await s.fetch(origin + '/robots.txt');
@@ -822,7 +881,13 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
       // 4xx: no robots.txt, everything allowed (RFC 9309 §2.3.1.3). 5xx or no answer: treated as «no» for this visit.
       else if (r.status >= 500) parsed = { groups: [{ agents: ['*'], rules: [{ allow: false, path: '/' }] }], sitemaps: [], unreachable: true };
     } catch (e) {
-      if (s.signal?.aborted || e.code === 'budget') throw e;
+      if (s.stopped() || e.code === 'budget' || s.timedOut) throw e;
+      // No answer in time: «no» for the rest of this call, but not remembered (the next call asks again).
+      if (e.code === 'timeout') {
+        const no = { groups: [{ agents: ['*'], rules: [{ allow: false, path: '/' }] }], sitemaps: [], unreachable: true };
+        (s.robots ??= new Map()).set(origin, no);
+        return no;
+      }
       parsed = { groups: [{ agents: ['*'], rules: [{ allow: false, path: '/' }] }], sitemaps: [], unreachable: true };
     }
     if (robotsCache.size > 50) robotsCache.delete(robotsCache.keys().next().value);
@@ -872,7 +937,7 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
       if (s.left <= 0) break;
       if (t.via === 'format=amp' && ampOk) continue;   // the guess only when the linked AMP gave nothing
       let chunks = [];
-      try { chunks = await t.read(await s.fetch(t.url)); } catch (e) { if (s.signal?.aborted) throw e; if (e.code === 'budget') break; continue; }
+      try { chunks = await t.read(await s.fetch(t.url)); } catch (e) { if (s.over(e)) break; continue; }
       const len = chunks.reduce((n, c) => n + c.text.length, 0);
       // A known site's public API is the post itself, with its date and counts: it is taken whenever it answers.
       const take = /-api$/.test(t.via) ? len > 0 : len > page.ownText;
@@ -894,13 +959,15 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
       if (s.left <= 0) { const e = new Error('budget'); e.code = 'budget'; throw e; }
       s.left--;
       s.sent.push(searchEngine.url(query));
+      s.progress(searchEngine.url(query));
       try {
-        const r = await searchEngine.run(query, { signal: s.signal });
+        const r = await s.race((sig) => searchEngine.run(query, { signal: sig }));
         if (r.items.length) return { items: r.items, answers: r.answers || [], via: 'searxng' };
         s.notes.push({ engine: 'empty' });
       } catch (e) {
-        if (s.signal?.aborted) throw e;
-        s.notes.push({ engine: e.code || e.status || 'error' });
+        if (s.stopped()) throw e;
+        s.notes.push({ engine: s.timedOut ? 'timeout' : e.code || e.status || 'error' });
+        if (s.timedOut) return { items: [], blocked: true, via: 'searxng' };
       }
       const d = await ddgSearch(s, query, [DDG[1]]);
       // Our search failed (429, down) and DuckDuckGo gave nothing either: nobody would search, which is not «no results».
@@ -914,7 +981,7 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
     let blocked = false;
     for (const ep of endpoints) {
       let r;
-      try { r = await s.fetch(ep + encodeURIComponent(query)); } catch (e) { if (s.signal?.aborted || e.code === 'budget') throw e; continue; }
+      try { r = await s.fetch(ep + encodeURIComponent(query)); } catch (e) { if (s.stopped() || e.code === 'budget' || s.timedOut) throw e; continue; }
       const p = parseDuckDuckGo(r.text || '', parseHTML, r.status);
       if (p.items.length) return { items: p.items };
       if (p.blocked) blocked = true;
@@ -931,6 +998,7 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
     for (const it of items) {
       if (pages.length >= n || s.left < 2) break;
       if (ASSET.test(it.url) || /\.(pdf|docx?|xlsx?|pptx?|odt)(\?|#|$)/i.test(it.url)) continue;   // not text: a request for nothing
+      if (unreadable(it.url)) { s.notes.push({ skipped: it.url }); continue; }   // its snippet is all there is to read
       const bare = it.url.replace(/[?#].*$/, '');
       if (tried.has(bare)) continue;   // the same page with ?output_format=md, ?amp… is not a second source
       tried.add(bare);
@@ -938,7 +1006,7 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
         if (!(await allowed(s, it.url))) { s.notes.push({ robots: it.url }); continue; }
         const p = await readPage(s, it.url);
         if (p.chunks?.length) pages.push(p);
-      } catch (e) { if (s.signal?.aborted) throw e; if (e.code === 'budget') break; }
+      } catch (e) { if (s.over(e)) break; }
     }
     return { pages, ...rankPassages(pages, question, { ...R, budget, perPage }) };
   }
@@ -952,57 +1020,26 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
     // (a domain they wrote, or a word close to the site's name: «AEMET» when the model wrote site:emet.gob.es), then
     // a search inside that site (its own search, its sitemap, a short crawl), then the same words once without
     // site:. `question` is what the user wrote; it only decides here, on the device.
-    async search(query, { question = '', read = 0, signal } = {}) {
-      const s = session(signal);
-      let r = await engineSearch(s, query);
-      let fixed = null;
-      const firstBlocked = !!r.blocked;
-      const op = /(^|\s)site:(\S+)/i.exec(query);
-      if (!r.items.length && op) {
-        const rest = query.replace(op[0], ' ').replace(/\s+/g, ' ').trim();
-        // site:wordpress.org/news is a folder: /news/ (the trailing slash spares a redirect, and robots and the
-        // search inside the site start from there).
-        let target = op[2].replace(/^https?:\/\//i, '');
-        if (/\/[^/.]+$/.test(target)) target += '/';
-        const domain = target.replace(/\/.*$/, '').toLowerCase();
-        const fix = closestDomain(domain, question);
-        if (fix?.domain && s.left > 0) {
-          r = await engineSearch(s, `site:${fix.domain} ${rest}`);
-          if (r.items.length) fixed = { from: domain, to: fix.domain };
-        } else if (fix?.word && s.left > 0) {
-          const r2 = await engineSearch(s, `${rest} ${fix.word}`);
-          const theirs = r2.items.filter((it) => hostName(it.url).includes(fix.word));
-          if (theirs.length) { r = { ...r2, items: theirs }; fixed = { from: domain, to: fix.word }; }
-        }
-        if (!r.items.length && !fix && rest && s.left >= 3) {
-          const st = await siteIn(s, target, rest, { question, skipEngine: true });
-          if (st.items?.length || st.passages?.length) {
-            return { query, items: (st.items || []).slice(0, 6), answers: [], via: 'site', siteVia: st.via, blocked: false, sent: s.sent, passages: st.passages || [], notes: s.notes };
-          }
-        }
-        if (!r.items.length && rest && s.left > 0) {
-          r = await engineSearch(s, rest);
-          if (r.items.length) fixed = { from: domain, to: '' };
-        }
-      }
-      const items = r.items.slice(0, 6);
-      const out = { query, items, answers: r.answers || [], via: r.via, fixed, fallback: !!r.fallback, blocked: !!r.blocked || (!items.length && firstBlocked), sent: s.sent, passages: [], notes: s.notes };
-      if (read && items.length) {
-        const rr = await readResults(s, items, (question + ' ' + query).trim(), { n: read, budget: Math.max(600, L.searchChars - 1200) });
-        out.passages = rr.passages;
-        out.notes = s.notes;
-      }
-      return out;
+    async search(query, { question = '', read = 0, signal, onProgress } = {}) {
+      const s = session(signal, onProgress);
+      return bounded(s, () => searchIn(s, query, { question, read }));
     },
 
     // web.fetch: one page, its passages for the question. An address that was asked for is read without robots.txt.
-    async fetch(url, { question = '', signal, budget = L.fetchChars } = {}) {
-      const s = session(signal);
-      const p = await readPage(s, url, { guessAmp: true });
-      if (p.error) return { url, error: p.error, sent: s.sent };
-      if (p.json) return { url: p.url, title: '', passages: [{ url: p.url, h: '', text: p.json.slice(0, budget) }], matched: true, total: 1, sent: s.sent, page: { title: '', chunks: [] } };
-      const rk = rankPassages(p, question, { ...R, budget });
-      return { url: p.url, title: p.title, description: p.description, published: p.published, jsOnly: p.jsOnly, truncated: p.truncated, via: p.via, fallbacks: p.fallbacks || [], altUrl: p.altUrl || '', sent: s.sent, page: p, ...rk };
+    async fetch(url, { question = '', signal, budget = L.fetchChars, onProgress } = {}) {
+      const s = session(signal, onProgress);
+      return bounded(s, async () => {
+        let p;
+        try { p = await readPage(s, url, { guessAmp: true }); } catch (e) {
+          // Out of time: the page did not come back. Said as such, never as a hang.
+          if (s.over(e) || e?.code === 'timeout') return { url, error: { code: 'timeout' }, sent: s.sent };
+          throw e;
+        }
+        if (p.error) return { url, error: p.error, sent: s.sent };
+        if (p.json) return { url: p.url, title: '', passages: [{ url: p.url, h: '', text: p.json.slice(0, budget) }], matched: true, total: 1, sent: s.sent, page: { title: '', chunks: [] } };
+        const rk = rankPassages(p, question, { ...R, budget });
+        return { url: p.url, title: p.title, description: p.description, published: p.published, jsOnly: p.jsOnly, truncated: p.truncated, via: p.via, fallbacks: p.fallbacks || [], altUrl: p.altUrl || '', sent: s.sent, page: p, ...rk };
+      });
     },
 
     // web.site: search INSIDE a site. In order, and stopping at the first that answers: a documented public API
@@ -1010,26 +1047,79 @@ export function createResearch({ get, parseHTML, terms, buildBM25, Readability =
     // the search engine with site: (Elffuss's SearXNG, else DuckDuckGo), its sitemap, and at last a short crawl
     // from the page given. Then the best results are
     // read and their passages ranked for the question.
-    async site(site, query, { question = '', signal } = {}) {
-      return siteIn(session(signal), site, query, { question });
+    async site(site, query, { question = '', signal, onProgress } = {}) {
+      const s = session(signal, onProgress);
+      return bounded(s, () => siteIn(s, site, query, { question }));
     },
 
     // A short crawl from a page, same site and below its folder, following the links whose words match the
     // question best; its passages ranked across the pages read.
-    async crawl(url, question, { signal, pages, depth } = {}) {
-      const s = session(signal);
-      const start = normalizeSite(url);
-      if (!start) return { error: { code: 'bad-url' }, sent: [] };
-      if (!(await allowed(s, start.href))) return { robots: true, passages: [], items: [], sent: s.sent };
-      const home = await readPage(s, start.href);
-      if (home.error) return { error: home.error, passages: [], items: [], sent: s.sent };
-      const c = await crawlFrom(s, home, question, start, { pages, depth });
-      return { ...c, sent: s.sent, notes: s.notes };
+    async crawl(url, question, { signal, pages, depth, onProgress } = {}) {
+      const s = session(signal, onProgress);
+      return bounded(s, async () => {
+        const start = normalizeSite(url);
+        if (!start) return { error: { code: 'bad-url' }, sent: [] };
+        try {
+          if (!(await allowed(s, start.href))) return { robots: true, passages: [], items: [], sent: s.sent };
+          const home = await readPage(s, start.href);
+          if (home.error) return { error: home.error, passages: [], items: [], sent: s.sent };
+          const c = await crawlFrom(s, home, question, start, { pages, depth });
+          return { ...c, sent: s.sent, notes: s.notes };
+        } catch (e) {
+          if (s.over(e) || e?.code === 'timeout') return { error: { code: 'timeout' }, passages: [], items: [], sent: s.sent };
+          throw e;
+        }
+      });
     },
   };
 
+  // web.search's steps (see search above). Out of budget or out of time at any step, it returns what it found so far.
+  async function searchIn(s, query, { question, read }) {
+    const safe = async (work, fallback) => { try { return await work(); } catch (e) { if (s.over(e) || e?.code === 'timeout') return fallback; throw e; } };
+    const nothing = { items: [], answers: [], blocked: false };
+    let r = await safe(() => engineSearch(s, query), { ...nothing, blocked: true });
+    let fixed = null;
+    const firstBlocked = !!r.blocked;
+    const op = /(^|\s)site:(\S+)/i.exec(query);
+    if (!r.items.length && op) {
+      const rest = query.replace(op[0], ' ').replace(/\s+/g, ' ').trim();
+      // site:wordpress.org/news is a folder: /news/ (the trailing slash spares a redirect, and robots and the
+      // search inside the site start from there).
+      let target = op[2].replace(/^https?:\/\//i, '');
+      if (/\/[^/.]+$/.test(target)) target += '/';
+      const domain = target.replace(/\/.*$/, '').toLowerCase();
+      const fix = closestDomain(domain, question);
+      if (fix?.domain && s.left > 0) {
+        r = await safe(() => engineSearch(s, `site:${fix.domain} ${rest}`), nothing);
+        if (r.items.length) fixed = { from: domain, to: fix.domain };
+      } else if (fix?.word && s.left > 0) {
+        const r2 = await safe(() => engineSearch(s, `${rest} ${fix.word}`), nothing);
+        const theirs = r2.items.filter((it) => hostName(it.url).includes(fix.word));
+        if (theirs.length) { r = { ...r2, items: theirs }; fixed = { from: domain, to: fix.word }; }
+      }
+      if (!r.items.length && !fix && rest && s.left >= 3) {
+        const st = await safe(() => siteIn(s, target, rest, { question, skipEngine: true }), {});
+        if (st.items?.length || st.passages?.length) {
+          return { query, items: (st.items || []).slice(0, 6), answers: [], via: 'site', siteVia: st.via, blocked: false, sent: s.sent, passages: st.passages || [], notes: s.notes };
+        }
+      }
+      if (!r.items.length && rest && s.left > 0) {
+        r = await safe(() => engineSearch(s, rest), r);
+        if (r.items.length) fixed = { from: domain, to: '' };
+      }
+    }
+    const items = r.items.slice(0, 6);
+    const out = { query, items, answers: r.answers || [], via: r.via, fixed, fallback: !!r.fallback, blocked: !!r.blocked || (!items.length && firstBlocked), sent: s.sent, passages: [], notes: s.notes };
+    if (read && items.length) {
+      const rr = await safe(() => readResults(s, items, (question + ' ' + query).trim(), { n: read, budget: Math.max(600, L.searchChars - 1200) }), { passages: [] });
+      out.passages = rr.passages;
+    }
+    out.notes = s.notes;
+    out.timedOut = s.timedOut;
+    return out;
+  }
+
 async function siteIn(s, site, query, { question = '', skipEngine = false } = {}) {
-  const signal = s.signal;
     const start = normalizeSite(site);
     if (!start) return { error: { code: 'bad-url' }, sent: [] };
     const ask = (question + ' ' + query).trim();
@@ -1087,11 +1177,10 @@ async function siteIn(s, site, query, { question = '', skipEngine = false } = {}
         tries.push('crawl');
       }
     } catch (e) {
-      if (signal?.aborted) throw e;
-      if (e.code !== 'budget') throw e;
-      tries.push('budget');
+      if (!s.over(e) && e?.code !== 'timeout') throw e;
+      tries.push(s.timedOut ? 'timeout' : e.code === 'timeout' ? 'slow' : 'budget');
     }
-    const rr = items.length ? await readResults(s, items, ask, { n: L.readTop, budget: Math.max(600, L.siteChars - 900), perPage: L.siteChars }).catch((e) => { if (signal?.aborted) throw e; return { passages: [] }; }) : { passages: [] };
+    const rr = items.length ? await readResults(s, items, ask, { n: L.readTop, budget: Math.max(600, L.siteChars - 900), perPage: L.siteChars }).catch((e) => { if (s.stopped()) throw e; return { passages: [] }; }) : { passages: [] };
     return { site: start.href, query, via, items: items.slice(0, 6), passages: rr.passages, sent: s.sent, tries, notes: s.notes };
 }
 
@@ -1102,7 +1191,7 @@ async function siteIn(s, site, query, { question = '', skipEngine = false } = {}
     while (queue.length && read < L.sitemaps && s.left > 3) {
       const m = queue.shift();
       if (/\.gz(\?|$)/i.test(m) || !(await allowed(s, m))) continue;
-      const r = await s.fetch(m).catch((e) => { if (s.signal?.aborted || e.code === 'budget') throw e; return null; });
+      const r = await s.fetch(m).catch((e) => { if (s.stopped() || e.code === 'budget' || s.timedOut) throw e; return null; });
       read++;
       if (!r?.ok || !isTextual(r.type)) continue;
       const sm = parseSitemap(r.text);
@@ -1126,7 +1215,7 @@ async function siteIn(s, site, query, { question = '', skipEngine = false } = {}
         if (!p.chunks) continue;
         read.push(p);
         if (next.d < depth) frontier.push(...nextLinks(p, question, start, seen, next.d + 1));
-      } catch (e) { if (s.signal?.aborted) throw e; if (e.code === 'budget') break; }
+      } catch (e) { if (s.over(e)) break; }
     }
     const rk = rankPassages(read, question, { ...R, budget: L.siteChars, perPage: Math.ceil(L.siteChars * 0.7) });
     return { pages: read.map((p) => p.url), items: read.slice(1).map((p) => ({ title: p.title, url: p.url, snippet: '' })), ...rk };
@@ -1197,7 +1286,8 @@ export const WORDS = {
     jsOnly: 'Esta página se construye con JavaScript y sin un navegador no tiene texto que leer. Busca la misma información en otra página.',
     notText: (t) => `No es una página de texto (${t}): no se puede leer aquí.`,
     site: (h, st) => `${h} respondió con el código ${st}.`,
-    proxy: (h, code) => code === 'rate-limited' ? 'Se ha llegado al límite de lecturas por minuto. Espera un minuto y vuelve a intentarlo.' : `No se pudo leer ${h} a través del proxy (${code}).`,
+    proxy: (h, code) => code === 'rate-limited' ? 'Se ha llegado al límite de lecturas por minuto. Espera un minuto y vuelve a intentarlo.' : code === 'timeout' ? `${h} no ha respondido a tiempo. Prueba con otra página.` : `No se pudo leer ${h} a través del proxy (${code}).`,
+    partial: '(La búsqueda se cortó por tiempo: esto es lo que dio tiempo a reunir.)',
     siteHead: (h, q, via) => `Búsqueda de «${q}» dentro de ${h}${via ? ` (con ${via})` : ''}:`,
     siteNone: (h, q) => `No se encontró «${q}» dentro de ${h}: ni su buscador, ni los buscadores de internet, ni su mapa del sitio dieron resultados.`,
     robots: (h) => `${h} pide en su robots.txt que los programas no lean esa parte del sitio.`,
@@ -1219,7 +1309,8 @@ export const WORDS = {
     jsOnly: 'This page is built by JavaScript and has no text to read without a browser. Look for the same information on another page.',
     notText: (t) => `Not a text page (${t}): it cannot be read here.`,
     site: (h, st) => `${h} answered with code ${st}.`,
-    proxy: (h, code) => code === 'rate-limited' ? 'The limit of reads per minute was reached. Wait a minute and try again.' : `Could not read ${h} through the proxy (${code}).`,
+    proxy: (h, code) => code === 'rate-limited' ? 'The limit of reads per minute was reached. Wait a minute and try again.' : code === 'timeout' ? `${h} did not answer in time. Try another page.` : `Could not read ${h} through the proxy (${code}).`,
+    partial: '(The search was cut short for time: this is what it gathered.)',
     siteHead: (h, q, via) => `Search for “${q}” inside ${h}${via ? ` (with ${via})` : ''}:`,
     siteNone: (h, q) => `Nothing found for “${q}” inside ${h}: neither its search, nor the web search engines, nor its sitemap gave results.`,
     robots: (h) => `${h} asks in its robots.txt that programs do not read that part of the site.`,
@@ -1245,7 +1336,7 @@ const passageLines = (ps, withUrl) => {
 export function renderSearch(r, w) {
   if (!r.items.length) return r.blocked ? w.blocked(r.query) : w.none(r.query);
   const lines = r.items.map((it) => `• ${it.title}\n  ${it.url}${it.snippet ? '\n  ' + it.snippet.slice(0, 180) : ''}`);
-  let text = w.results(r.query) + (r.fixed ? '\n' + w.fixed(r.fixed) : '') + (r.answers?.length ? '\n' + w.answer + ' ' + r.answers.join(' · ') : '') + '\n\n' + lines.join('\n\n');
+  let text = w.results(r.query) + (r.timedOut ? '\n' + w.partial : '') + (r.fixed ? '\n' + w.fixed(r.fixed) : '') + (r.answers?.length ? '\n' + w.answer + ' ' + r.answers.join(' · ') : '') + '\n\n' + lines.join('\n\n');
   if (r.passages?.length) text += '\n\n' + w.read + '\n' + passageLines(r.passages, true);
   return text + '\n\n' + w.cite;
 }

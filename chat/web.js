@@ -16,7 +16,7 @@
 import { terms, buildBM25 } from './js/acer-core.js';
 import { createResearch, decodeBody, parseSearx, WORDS, renderSearch, renderPage, renderSite } from './web-research.js';
 
-const TIMEOUT_MS = 25000;   // per request; the proxy gives up on its own after 30 s
+const TIMEOUT_MS = 20000;   // per request, headers and body; web-research.js also races each one (LIMITS.requestMs)
 
 let Readability = null;
 const readability = () => (Readability ??= import('./vendor/readability.js').then((m) => m.default, () => null));
@@ -90,7 +90,8 @@ let research = null;
 async function lab(es) {
   searchLang = es ? 'es' : 'en';
   if (research) return research;
-  research = createResearch({ get, parseHTML: parseWithBase, terms, buildBM25, Readability: await readability(), searchEngine });
+  // The local tests shorten the module's limits through globalThis.__chatWebLimits; the site never sets it.
+  research = createResearch({ get, parseHTML: parseWithBase, terms, buildBM25, Readability: await readability(), searchEngine, limits: globalThis.__chatWebLimits || {} });
   return research;
 }
 
@@ -101,32 +102,32 @@ const errors = (es) => es
   : { noQuery: 'Missing what to search for', badUrl: 'The address must start with http:// or https://', noSite: 'Missing the site to search in' };
 
 // Each returns { text: what the model reads, items: [{ title, url }] for the card, sent: every address requested }.
-export async function search(query, { es, signal, question = '', read = 2 } = {}) {
+export async function search(query, { es, signal, question = '', read = 2, onProgress } = {}) {
   const e = errors(es), w = words(es);
   query = String(query || '').trim();
   if (!query) throw new Error(e.noQuery);
-  const r = await (await lab(es)).search(query, { question, read, signal });
+  const r = await (await lab(es)).search(query, { question, read, signal, onProgress });
   if (!r.items.length && r.blocked) throw new Error(w.blocked(query));
   const L = research.limits;
-  return { text: cap(renderSearch(r, w), L.searchChars + 1200, w), items: r.items, sent: r.sent, via: r.via, read: [...new Set(r.passages.map((p) => p.url))] };
+  return { text: cap(renderSearch(r, w), L.searchChars + 1200, w), items: r.items, sent: r.sent, via: r.via, read: [...new Set(r.passages.map((p) => p.url))], timedOut: !!r.timedOut };
 }
 
-export async function fetchPage(url, { es, signal, question = '' } = {}) {
+export async function fetchPage(url, { es, signal, question = '', onProgress } = {}) {
   const e = errors(es), w = words(es);
   url = String(url || '').trim();
   if (!/^https?:\/\//.test(url)) throw new Error(e.badUrl);
-  const r = await (await lab(es)).fetch(url, { question, signal });
+  const r = await (await lab(es)).fetch(url, { question, signal, onProgress });
   if (r.error) throw new Error(renderPage(r, w, question));
   return { text: cap(renderPage(r, w, question), research.limits.fetchChars + 600, w), title: r.title || hostOf(url), sent: r.sent };
 }
 
-export async function siteSearch(site, query, { es, signal, question = '' } = {}) {
+export async function siteSearch(site, query, { es, signal, question = '', onProgress } = {}) {
   const e = errors(es), w = words(es);
   site = String(site || '').trim();
   query = String(query || '').trim();
   if (!site) throw new Error(e.noSite);
   if (!query) throw new Error(e.noQuery);
-  const r = await (await lab(es)).site(site, query, { question, signal });
+  const r = await (await lab(es)).site(site, query, { question, signal, onProgress });
   if (r.error?.code === 'bad-url') throw new Error(e.badUrl);
   return { text: cap(renderSite(r, w), research.limits.siteChars + 900, w), items: r.items || [], sent: r.sent, via: r.via || '', site: r.site || site };
 }

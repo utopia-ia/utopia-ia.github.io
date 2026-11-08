@@ -26,7 +26,7 @@ import { offerInstall } from './install.js';
 import * as web from './web.js';
 import * as appview from './appview.js';
 import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
-import { parseToolCall, writingTool, systemPrompt, contextBlock, withContext, CONTEXT_LABEL } from './tools.js';
+import { parseToolCall, writingTool, systemPrompt, contextBlock, withTurnContext, CONTEXT_LABEL } from './tools.js';
 import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes, describedLine } from './media-tools.js';
 import { needsMediaTools, hasMediaIn, editTarget } from './media-intent.js';
 import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
@@ -187,6 +187,14 @@ const T = {
     listKept: '(The list was shown to the user. Call memory.list again if you need it.)',
     anythingElse: 'Anything else?',
     webClose: 'This is what I found; you can read it in these sources:',
+    webPartial: 'This is what I have found so far; you can read it in these sources:',
+    webProgress: (host, n, of) => `Reading ${host}… (${n}/${of})`,
+    webAsking: (n, of) => `Asking the search engines… (${n}/${of})`,
+    webSlowTool: 'The search took too long and was cut short.',
+    alreadyAbove: 'That result is already above: do not ask for it again. Answer the user now from what the results say, with their links.',
+    answerNow: 'No more searches in this turn. Answer the user now from what the results above say, with their links.',
+    digest: '(summary: read in full earlier in this turn)',
+    stalled: 'The model stopped answering. Try again: it is loaded again if it has to be.',
     cutTool: 'The model ran out of room before it finished. Ask again, perhaps for something smaller.',
     appError: (m) => `The app hit an error: ${m}`,
     fixIt: 'Ask to fix it',
@@ -356,6 +364,14 @@ const T = {
     listKept: '(La lista se le mostró al usuario. Vuelve a llamar a memory.list si la necesitas.)',
     anythingElse: '¿Algo más?',
     webClose: 'Esto es lo que he encontrado; puedes leerlo en estas fuentes:',
+    webPartial: 'Esto es lo que he encontrado hasta ahora; puedes leerlo en estas fuentes:',
+    webProgress: (host, n, of) => `Leyendo ${host}… (${n}/${of})`,
+    webAsking: (n, of) => `Preguntando a los buscadores… (${n}/${of})`,
+    webSlowTool: 'La búsqueda tardó demasiado y se cortó.',
+    alreadyAbove: 'Ese resultado ya está arriba: no lo pidas otra vez. Responde ahora al usuario con lo que dicen los resultados, con sus enlaces.',
+    answerNow: 'No quedan más búsquedas en este turno. Responde ahora al usuario con lo que dicen los resultados de arriba, con sus enlaces.',
+    digest: '(resumen: se leyó entero antes en este turno)',
+    stalled: 'El modelo ha dejado de responder. Vuelve a intentarlo: se carga otra vez si hace falta.',
     cutTool: 'El modelo se quedó sin margen antes de terminar. Pídelo otra vez, quizá algo más pequeño.',
     appError: (m) => `La app ha dado un error: ${m}`,
     fixIt: 'Pedir que lo arregle',
@@ -969,6 +985,11 @@ function paintCard(li, m) {
     body.append(el('span', 'tc-kicker', kicker));
     const title = inSite ? `${hostOf(r.site || c.url || '')} · ${r.query || c.query || ''}` : search ? (r.query || c.query || '') : (r.url || c.url || '');
     body.append(el('b', 'tc-title', title));
+    // While it runs: which address it is reading, and how many of its requests have gone.
+    if (r.pending && m.webLive?.url) {
+      const w = m.webLive, own = w.url.startsWith(location.origin + '/websearch');
+      body.append(el('span', 'tc-line tc-live', own ? t('webAsking', w.n, w.of) : t('webProgress', hostOf(w.url), w.n, w.of)));
+    }
     if (r.error) body.append(el('span', 'tc-line', r.error));
     else if (!r.pending && (search || inSite)) {
       const items = r.items || [];
@@ -1128,10 +1149,10 @@ const ECHO = /<(memoria|memory|contexto|context)\b[^>]*>[\s\S]*?(<\/\1\s*>|$)/gi
 const stripEcho = (s) => String(s || '').replace(ECHO, '').replace(/\n{3,}/g, '\n\n').trim();
 
 // The close of a turn that ended on web results: one sentence in the chat's language and up to five sources.
-function webClose(sources) {
+function webClose(sources, partial = false) {
   if (!sources.length) return t('anythingElse');
   const md = (s) => s.replace(/[[\]]/g, '').slice(0, 120);
-  return t('webClose') + '\n' + sources.slice(0, 5).map((s) => `- [${md(s.title)}](${s.url})`).join('\n');
+  return t(partial ? 'webPartial' : 'webClose') + '\n' + sources.slice(0, 5).map((s) => `- [${md(s.title)}](${s.url})`).join('\n');
 }
 
 function htmlText(h) {
@@ -1264,7 +1285,7 @@ async function runTool(call, ctx) {
       ctx.summary.query = query;
       try {
         // The question ranks the passages of the pages read, here on the device; it is not sent anywhere.
-        const r = await web.search(query, { es, signal: ctx.signal, question: ctx.userText });
+        const r = await web.search(query, { es, signal: ctx.signal, question: ctx.userText, onProgress: ctx.webProgress });
         return { text: r.text, result: { query, items: r.items, sent: r.sent } };
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
@@ -1276,7 +1297,7 @@ async function runTool(call, ctx) {
       const url = String(a.url ?? '').trim();
       ctx.summary.url = url;
       try {
-        const r = await web.fetchPage(url, { es, signal: ctx.signal, question: [a.question, ctx.userText].filter(Boolean).join(' ') });
+        const r = await web.fetchPage(url, { es, signal: ctx.signal, question: [a.question, ctx.userText].filter(Boolean).join(' '), onProgress: ctx.webProgress });
         return { text: r.text, result: { url, title: r.title, sent: r.sent } };
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
@@ -1289,7 +1310,7 @@ async function runTool(call, ctx) {
       const query = String(a.query ?? a.q ?? a.text ?? a.search ?? '').trim().slice(0, 300);
       ctx.summary.url = site; ctx.summary.query = query;
       try {
-        const r = await web.siteSearch(site, query, { es, signal: ctx.signal, question: ctx.userText });
+        const r = await web.siteSearch(site, query, { es, signal: ctx.signal, question: ctx.userText, onProgress: ctx.webProgress });
         return { text: r.text, result: { site: r.site, query, items: r.items, sent: r.sent, via: r.via } };
       } catch (e) {
         if (ctx.signal?.aborted) throw e;
@@ -1921,6 +1942,7 @@ function loadEngine() {
 }
 
 function friendly(e) {
+  if (e?.key) return e.key;
   const s = String(e?.message || e);
   if (/otra pestaña/i.test(s)) return 'errTab';
   if (/espacio|Failed to fetch|NetworkError|quota|cuota|No cabe|se cortó/i.test(s)) return 'errSpace';
@@ -2030,6 +2052,133 @@ function retryWithoutReasoning(li, mine, msg) {
 // in the thread, with its own reasoning.
 const MAX_STEPS = 5;
 
+// ---------- Guards: a turn never hangs in silence ----------
+// Kiko, on a phone, asking for a hairdresser in Málaga: «antes de terminar se ha quedado colgado y no ha seguido».
+// Each piece that can wait has its own limit, and every limit ends in something the visitor can read:
+//   · a web tool call: WEB_TOOL_MS, whatever its requests do (web-research.js already ends its own at 40 s with what
+//     it has); past it, the model reads that the search was cut short
+//   · a model step: STALL_MS without a new token and without reading progress → the step is given up, the turn closes
+//     with what it found (or says the model stopped, with «Try again»), and an engine that does not let go is reloaded
+//   · the turn: after TURN_MS of visible time no new web call starts; the turn closes with what it found
+//   · the context: before each step the prompt is measured against the model's real context (see fitTurn)
+// Time with the tab hidden does not count: a phone pauses the page, the network and the graphics card there.
+// The local tests (tests/chat-guards.mjs) shorten them through globalThis.__chatGuards; the site never sets it.
+const guard = (key, gpu, cpu = gpu) => { const g = globalThis.__chatGuards?.[key]; return g != null ? g : device.cpu ? cpu : gpu; };
+const WEB_TOOL_MS = () => guard('webToolMs', 45_000);
+const STALL_MS = () => guard('stallMs', 120_000, 300_000);
+const TURN_MS = () => guard('turnMs', 5 * 60_000, 12 * 60_000);
+
+// The visible time since a moment, hidden spells left out.
+function visibleClock() {
+  const t0 = Date.now();
+  let hiddenSince = document.hidden ? t0 : 0, hidden = 0;
+  const on = () => {
+    if (document.hidden) hiddenSince = Date.now();
+    else if (hiddenSince) { hidden += Date.now() - hiddenSince; hiddenSince = 0; }
+  };
+  document.addEventListener('visibilitychange', on);
+  return {
+    ms: () => Date.now() - t0 - hidden - (hiddenSince ? Date.now() - hiddenSince : 0),
+    stop: () => document.removeEventListener('visibilitychange', on),
+  };
+}
+
+// A web call with its own limit: past WEB_TOOL_MS its requests are aborted and the model reads that it was cut short.
+// The visitor's Stop still stops it at once (ctx.signal).
+function boundedTool(call, ctx) {
+  if (!String(call.tool).startsWith('web.')) return runTool(call, ctx);
+  const tc = new AbortController();
+  const relay = () => tc.abort();
+  if (ctx.signal.aborted) tc.abort(); else ctx.signal.addEventListener('abort', relay, { once: true });
+  let timer = null;
+  const work = runTool(call, { ...ctx, signal: tc.signal });
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      tc.abort();
+      const why = t('webSlowTool');
+      const s = callSummary(call);
+      resolve({ text: 'ERROR: ' + why, result: { ...(s.query != null ? { query: s.query } : {}), ...(s.url != null ? { url: s.url } : {}), error: why }, slow: true });
+    }, WEB_TOOL_MS());
+  });
+  work.catch(() => {});   // after the limit its rejection (the abort) is nobody's business
+  return Promise.race([work, late]).finally(() => { clearTimeout(timer); ctx.signal.removeEventListener('abort', relay); });
+}
+
+// ---------- The context of a step ----------
+// The engine fits the history to the context by dropping the OLDEST messages: in a web turn on a phone (LFM3 Q4_0,
+// 8,192 tokens, of which the reasoning reserves 4,000) the second result already pushed out the visitor's question,
+// and the model went on without knowing what it was looking for. So each step is measured first, with a cautious
+// count (CHARS_PER_TOKEN below what LFM3's tokenizer gives on these prompts: ~3.5 measured), and made to fit:
+//   1. always: the web results of earlier turns are a digest (titles, addresses, a line each). Measured on
+//      elffuss.com with the processor (4,096 tokens): a follow-up question read 3,400 tokens again before its first
+//      word, most of them the pages of the previous answer, and the fifth step of a search had 119 tokens left for
+//      its answer, which stopped in the middle of a word
+//   2. this step answers without the reasoning block (it has the results; it only has to write)
+//   3. the earlier web results of this turn become a digest; the newest stays whole
+//   4. the earlier turns are left to the engine to drop (it drops the oldest first); this turn must fit on its own
+// If this turn alone does not fit, the turn closes with what it found instead of overflowing.
+const CHARS_PER_TOKEN = 3;
+const ANSWER_ROOM = 900;             // tokens kept free for the answer when the step does not reason
+function contextOf() {
+  const m = model() || {};
+  const real = engine?.contextoEfectivo?.() || 0;
+  return real || (device.cpu ? Math.min(m.ctx || 4096, 4096) : (m.ctx || 8192));
+}
+const estTokens = (system, history) => Math.ceil((system.length + history.reduce((n, x) => n + String(x.content).length + 12, 0)) / CHARS_PER_TOKEN);
+const isWebResult = (x) => x.role === 'user' && /^\[result web\./.test(x.content);
+function digestResult(content) {
+  const lines = String(content).split('\n');
+  const keep = [];
+  const size = () => keep.reduce((n, l) => n + l.length + 1, 0);
+  for (let i = 1; i < lines.length && size() < 900; i++) {
+    const l = lines[i];
+    if (/^• /.test(l)) {
+      keep.push(l.slice(0, 120));
+      if (/^\s+https?:\/\//.test(lines[i + 1] || '')) keep.push('  ' + lines[i + 1].trim());
+      if (/^\s{2}\S/.test(lines[i + 2] || '') && !/^\s+https?:\/\//.test(lines[i + 2])) keep.push('  ' + lines[i + 2].trim().slice(0, 140));
+    } else if (/^\[https?:\/\/[^\]]+\]/.test(l)) {
+      keep.push(l.slice(0, 200));
+      const next = lines.slice(i + 1).find((x) => x.trim() && !/^§/.test(x));
+      if (next) keep.push(next.trim().slice(0, 200));
+    }
+  }
+  return `${lines[0]}\n${t('digest')}\n${keep.length ? keep.join('\n') : lines.slice(1).join(' ').slice(0, 300)}`;
+}
+// → { history, reason, over } for this step. `start`: where this turn begins in `history` (the visitor's message).
+function fitTurn(history, system, reason, { ctx = contextOf(), budget = (r) => ctx - (r === false ? ANSWER_ROOM : (model()?.presupuesto || 4000)) } = {}) {
+  let h = history, r = reason;
+  let start = -1;
+  for (let i = h.length - 1; i >= 0; i--) if (h[i].role === 'user' && !/^\[result /.test(h[i].content) && !/^(CONTEXTO AHORA|CONTEXT NOW)/.test(h[i].content)) { start = i; break; }
+  const fits = (list = h) => estTokens(system, list) <= budget(r);
+  // Always: an earlier turn's web results are digests. Its answer, with the addresses it cited, is what carries over.
+  h = h.map((x, i) => (i < start && isWebResult(x) ? { ...x, content: digestResult(x.content) } : x));
+  if (fits()) return { history: h, reason: r, over: false, steps: [] };
+  const steps = [];
+  if (r !== false) { r = false; steps.push('noReason'); if (fits()) return { history: h, reason: r, over: false, steps }; }
+  let newest = -1;
+  for (let i = h.length - 1; i > start; i--) if (isWebResult(h[i])) { newest = i; break; }
+  h = h.map((x, i) => (i > start && i !== newest && isWebResult(x) ? { ...x, content: digestResult(x.content) } : x));
+  steps.push('thisTurn');
+  if (fits()) return { history: h, reason: r, over: false, steps };
+  // The earlier turns are the engine's to drop; what cannot be dropped is this turn.
+  steps.push('engineDrops');
+  return { history: h, reason: r, over: start >= 0 && !fits(h.slice(start)), steps };
+}
+
+// An engine whose step did not let go after a stall: asked to stop; if it still holds on, it is let go and loaded
+// again on the next message.
+function recoverEngine(pending) {
+  engine?.abort?.().catch?.(() => {});
+  const settled = Promise.resolve(pending).then(() => true, () => true);
+  Promise.race([settled, new Promise((r) => setTimeout(() => r(false), 5000))]).then((ok) => {
+    if (ok) return;
+    console.warn('[chat] the engine did not let go after a stall: unloading it');
+    loading = null;
+    releasing = engine?.unload?.().catch(() => {}).finally(() => { releasing = null; }) || null;
+    isCached().then((c) => setModelState(c ? 'cached' : 'missing'));
+  });
+}
+
 // An address in what the user wrote is read before the model answers, as the turn's first step (a web.fetch card,
 // like any call): measured with LFM3, given «lee https://…» the small model searched instead of reading it, 4 times
 // out of 4. Not when they ask for an app or ask to remember or forget something: the address is then data, not a
@@ -2126,6 +2275,9 @@ async function runTurn(li, mine, ctl, reason) {
   let attachNudged = false;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
+  let stepReason = reason;          // this step's: a step that has to make room answers without reasoning (fitTurn)
+  const webSources = [];            // pages the web tools brought this turn, for a turn that closes on them
+  const clock = visibleClock();
   try {
     await checked;
     // The pictures of the message are looked at before the model answers (once: the words are kept with them), so the
@@ -2150,11 +2302,12 @@ async function runTurn(li, mine, ctl, reason) {
     const done = [];                 // signatures of the calls already run this turn (Claw's anti-loop)
     const liveResults = new Map();   // result message -> what the model reads in this turn only (memory.list)
     let lastText = '';
-    const webSources = [];           // pages the web tools brought this turn, for a turn that closes on them
     let forced = addressToRead(userText);
     const forcedSig = forced ? forced.tool + ':' + JSON.stringify(forced.args) : '';
     let nudged = false;
-    for (let step = 0; step < MAX_STEPS; step++) {
+    let repeatNudged = false;
+    let answerAsked = false;         // the last step asked for one more web call: told to answer, one step more
+    for (let step = 0; step < MAX_STEPS + (answerAsked ? 1 : 0); step++) {
       if (step > 0) {
         li = appendBot();
         msg = { role: 'assistant', content: '', thinking: '' };
@@ -2175,28 +2328,65 @@ async function runTurn(li, mine, ctl, reason) {
       } else {
         const now = await untilStopped(liveContext(), ctl.signal);
         if (appTurn === null) appTurn = needsAppTools(userText, { open: now.open, names: (now.apps || []).map((a) => a.name) }).apps;
-        const history = withContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang) }), CONTEXT_LABEL[lang]);
+        const full = withTurnContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang) }), CONTEXT_LABEL[lang]);
+        const system = systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn, apps: appTurn });
+        // Measured against the model's real context before the engine sees it (fitTurn).
+        const fit = fitTurn(full, system, reason);
+        if (fit.steps.length) console.info('[chat] context:', fit.steps.join(' → '), fit.over ? '(does not fit: closing)' : '');
+        if (fit.over && webSources.length) {
+          msg.content = webClose(webSources, true);
+          finished = true;
+          break;
+        }
+        const history = fit.history;
+        stepReason = fit.reason;
+        engine.setSampling?.({ razonar: stepReason === false ? false : null });
         let queued = false;
         const paint = () => {
           queued = false;
           if (finished) return;              // a frame that arrives after the step ended must not repaint it as live
-          const p = reason === false ? { thinking: '', content: raw } : split(raw);
+          const p = stepReason === false ? { thinking: '', content: raw } : split(raw);
           msg.thinking = p.thinking; msg.content = stripEcho(p.content);
           paintBot(li, msg, { writing: true, thinkingLive: !p.content });
           scrollEnd();
         };
         // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it when it
         // fits the history to the model's context: no `reserveTokens` on top, or it would be subtracted twice.
-        const result = await engine.chat(history, systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn, apps: appTurn }), (tok) => {
+        // The step has its own stop: the visitor's, or the watchdog's when nothing comes for STALL_MS (no token and no
+        // reading progress; hidden time does not count). Then the step is not waited for any longer, whatever the
+        // engine does with its stop.
+        const stepCtl = new AbortController();
+        const relay = () => stepCtl.abort();
+        ctl.signal.addEventListener('abort', relay, { once: true });
+        let beat = Date.now(), stalled = false;
+        const dog = setInterval(() => {
+          if (document.hidden) { beat = Date.now(); return; }
+          if (Date.now() - beat > STALL_MS()) { stalled = true; stepCtl.abort(); }
+        }, 1000);
+        const pending = engine.chat(history, system, (tok) => {
           raw += tok;
+          beat = Date.now();
           if (!queued) { queued = true; requestAnimationFrame(paint); }
-        }, { signal: ctl.signal, onPrefill: (done, total) => { if (!finished && !raw) paintReading(li, done, total); } });
+        }, { signal: stepCtl.signal, onPrefill: (done, total) => { beat = Date.now(); if (!finished && !raw) paintReading(li, done, total); } });
+        let result;
+        try {
+          result = await untilStopped(pending, stepCtl.signal);
+        } catch (e) {
+          if (stalled && !ctl.signal.aborted) {
+            recoverEngine(pending);
+            throw Object.assign(new Error('stalled'), { code: 'stalled' });
+          }
+          throw e;
+        } finally {
+          clearInterval(dog);
+          ctl.signal.removeEventListener('abort', relay);
+        }
         finished = true;
         const med = engine.ultimaMedida?.();
         if (med && med.genTokens > 0) {
           msg.speed = { read: med.procesados || 0, readTokS: med.prefillTokS || 0, wrote: med.genTokens, wroteTokS: med.genTokS || 0, cached: med.reusados || 0 };
         }
-        const p = reason === false ? { thinking: '', content: raw } : split(raw);
+        const p = stepReason === false ? { thinking: '', content: raw } : split(raw);
         msg.thinking = raw.includes('</think>') ? p.thinking : (result ? '' : p.thinking);
         msg.content = stripEcho(String(result || '').trim());
         call = msg.content ? parseToolCall(msg.content) : null;
@@ -2259,11 +2449,35 @@ async function runTurn(li, mine, ctl, reason) {
         li.remove();
         continue;
       }
+      // The same web call again: told once that it is already above, to answer from it (measured with LFM3 on the
+      // hairdresser questions: it read the same Treatwell page twice and the turn closed on a list of links instead
+      // of an answer). A second repeat, or any other tool, closes with what the last one said.
+      // Out of steps with web results in hand, the model still wants to search: it is told to answer now, and gets one
+      // step for it (measured: a fifth search, then the turn closed on a list of links instead of an answer). If it
+      // still calls a tool, the turn closes with what it found.
+      if (call.tool.startsWith('web.') && webSources.length && step >= MAX_STEPS - 1) {
+        if (answerAsked) { msg.content = webClose(webSources, true); break; }
+        answerAsked = true;
+        mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${t('answerNow')}`, meta: 'result' });
+        li.remove();
+        continue;
+      }
+      if (done.includes(sig) && call.tool.startsWith('web.') && !repeatNudged && step < MAX_STEPS - 1) {
+        repeatNudged = true;
+        mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${t('alreadyAbove')}`, meta: 'result' });
+        li.remove();
+        continue;
+      }
       if (done.includes(sig)) {          // the same call again: close with what the last one said
         msg.content = lastText && !lastText.startsWith('ERROR') ? lastText : t('anythingElse');
         break;
       }
       done.push(sig);
+      // Past the turn's time, no new web call: what was found so far is the answer.
+      if (call.tool.startsWith('web.') && webSources.length && clock.ms() > TURN_MS()) {
+        msg.content = webClose(webSources, true);
+        break;
+      }
 
       msg.call = callSummary(call);
       msg.result = null;
@@ -2273,10 +2487,12 @@ async function runTurn(li, mine, ctl, reason) {
       const ctx = {
         userText, summary: msg.call, memory: mt, signal: ctl.signal, li,
         progress: (p) => { stepMsg.live = p; paintMediaProgress(stepLi, p); },
+        webProgress: (p) => { if (stepMsg.result) return; stepMsg.webLive = p; if (stepLi.isConnected) paintCard(stepLi, stepMsg); },
         ask: (scope, detail) => untilStopped(requirePerm(scope, detail, li, ctl.signal), ctl.signal),
         askMemory: (c) => untilStopped(askMemory(li, c, ctl.signal), ctl.signal),
       };
-      const res = await untilStopped(runTool(call, ctx), ctl.signal);
+      const res = await untilStopped(boundedTool(call, ctx), ctl.signal);
+      delete msg.webLive;
       // Any tool that is not memory taints the turn: what it returned is not the user's word, so a save after it can
       // only become a proposal.
       mt?.tool(call.tool);
@@ -2302,17 +2518,31 @@ async function runTurn(li, mine, ctl, reason) {
       mine.updated = Date.now();
       await store.put(mine);
       if (res.end) { msg = null; break; }
-      if (step === MAX_STEPS - 1) {
+      if (step === MAX_STEPS - 1 + (answerAsked ? 1 : 0)) {
         li = appendBot();
         msg = { role: 'assistant', content: lastText && !lastText.startsWith('ERROR') ? lastText : t('anythingElse'), thinking: '' };
         stepPushed = false;
       }
     }
   } catch (e) {
-    if (ctl.signal.aborted || e?.name === 'AbortError') {
+    if (e?.code === 'stalled' && !ctl.signal.aborted && msg && !stepPushed) {
+      // The model stopped answering (STALL_MS without a word): what it wrote stays; if that was nothing, or only the
+      // start of a tool call, what the web brought this turn; with nothing at all, the error and «Try again».
+      const p = stepReason === false ? { thinking: '', content: raw } : split(raw);
+      const wrote = stripEcho(p.content.trim());
+      const words = writingTool(wrote) ? writingTool(wrote).before : wrote;
+      msg.thinking = p.thinking;
+      if (words || webSources.length) {
+        msg.content = words || webClose(webSources, true);
+        msg.note = 'stalled';
+      } else {
+        failed = true;
+        showError(li, Object.assign(new Error(t('stalled')), { key: 'stalled' }), () => { if (!turn && chat === mine) answer(li); });
+      }
+    } else if (ctl.signal.aborted || e?.name === 'AbortError') {
       if (msg && !stepPushed) {
         // Keep what was written before the stop, exactly as it was on screen.
-        const p = reason === false ? { thinking: '', content: raw } : split(raw);
+        const p = stepReason === false ? { thinking: '', content: raw } : split(raw);
         msg.thinking = p.thinking; msg.content = p.content.trim();
         if (msg.call) msg.result = msg.result || { ...msg.call, error: t('stopped') };
         delete msg.live;
@@ -2321,10 +2551,13 @@ async function runTurn(li, mine, ctl, reason) {
       }
     } else {
       failed = true;
+      // What the web brought this turn is still worth reading above the error (shown, not kept: the error has a retry).
+      if (msg && !stepPushed && webSources.length && !String(msg.content || '').trim()) msg.content = webClose(webSources, true);
       showError(li, e, () => { if (!turn && chat === mine) answer(li); });
       if (friendly(e) === 'errLost') { loading = null; setModelState('cached'); }
     }
   } finally {
+    clock.stop();
     finished = true;
     turn = null;
     setBusy(false);
@@ -2345,7 +2578,7 @@ async function runTurn(li, mine, ctl, reason) {
       // Reasoning used the whole budget and left no answer: answer again at once without the reasoning step, once,
       // instead of waiting for the visitor to find the button. Seen with app requests, where the small model plans the
       // whole page in its reasoning and runs out before writing it.
-      if (msg.note === 'cut' && chat === mine && reason !== false && !msg.stopped) {
+      if (msg.note === 'cut' && chat === mine && stepReason !== false && !msg.stopped) {
         setTimeout(() => retryWithoutReasoning(li, mine, msg), 0);
       } else if (msg.note === 'cut' && chat === mine) {
         const b = document.createElement('button');
