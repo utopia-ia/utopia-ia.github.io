@@ -29,7 +29,7 @@ const med = (a) => { const v = [...a].sort((x, y) => x - y); return v[v.length >
 
 // Lo que sale por la consola también vuelve: errores y avisos, para depurar en remoto.
 const consola = [];
-for (const k of ['error', 'warn', 'info']) { const o = console[k]; console[k] = (...a) => { consola.push(`[${k}] ` + a.map(String).join(' ').slice(0, 400)); if (consola.length > 60) consola.shift(); o(...a); }; }
+for (const k of ['error', 'warn', 'info', 'log']) { const o = console[k]; console[k] = (...a) => { if (k === 'log' && !/^\[engine\] (LFM3|.* listo|carga:|velocidad:)/.test(String(a[0]))) return o(...a); consola.push(`[${k}] ` + a.map(String).join(' ').slice(0, 400)); if (consola.length > 60) consola.shift(); o(...a); }; }
 addEventListener('error', (e) => consola.push('[pageerror] ' + (e.message || e) + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')));
 addEventListener('unhandledrejection', (e) => consola.push('[rejection] ' + String(e.reason?.stack || e.reason).slice(0, 400)));
 
