@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "94589a091bb005fd612804b6595e11162997ef6e",
-    "engineCommit": "36eace1a0e0df3f778f11b73f214ac69a181bd45",
+    "commit": "5a410e14dd366a51098400cdc1e36388f1dc4644",
+    "engineCommit": "1eff908990721cce438013ae828918b41e94f3ca",
     "dir": "js",
     "files": [
       {
@@ -96,7 +96,7 @@
       {
         "from": "js/kernels.gemv.wgsl.js",
         "to": "engine/kernels.gemv.wgsl.js",
-        "sha256": "dc288f587e332d36c99635be562cda88a9d6893c7da4e2ed932d258a8fde1a06"
+        "sha256": "72914a8a0346a3bad323654e170550dffa51aabd5cb107f05bb026451d96508a"
       },
       {
         "from": "js/kernels.hadamard.wgsl.js",
@@ -176,7 +176,7 @@
       {
         "from": "js/model.js",
         "to": "engine/model.js",
-        "sha256": "14a0ea46d305e187e1673ef286a9a38d993a17e8f358044386dfeb7fcf2672d5"
+        "sha256": "0038ea3141254580a4b0e5fe4dcf3225f7d2b45ca44caa53792cc70c8ef56432"
       },
       {
         "from": "js/moss-cpu.js",
@@ -216,7 +216,7 @@
       {
         "from": "js/ops.js",
         "to": "engine/ops.js",
-        "sha256": "291c79c30fd1446d934c0a88cc1726644848abcf6ae5fc74884371087069e090"
+        "sha256": "beec4bab5d02fafbac0a5f86cb6cfe15620e655429dc4830e37a0da3014bbba5"
       },
       {
         "from": "js/ops.topk.js",
@@ -226,7 +226,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "a0e78edeb08c5e97a9de7a4ab53366c0961475a8b0d3e5d349f58393e0a9c833"
+        "sha256": "32ff947123a03a946f4df37a14d8323572b0d295093e0996c2dfddc527cb5476"
       },
       {
         "from": "js/quant-tables.js",
@@ -246,7 +246,7 @@
       {
         "from": "js/sample.js",
         "to": "engine/sample.js",
-        "sha256": "91bb7d322bf4dd5b67a588b0f7d3fc973d8e671f1b85002cde6083e95d6adf3e"
+        "sha256": "60d67a600eef26bc60e12e252b51849db550127351d0fdee324f0e6a5a1893ea"
       },
       {
         "from": "js/state.js",

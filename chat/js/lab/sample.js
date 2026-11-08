@@ -75,8 +75,15 @@ function candidatos(logits, margen) {
   return out.sort((a, b) => (antes(logits, a, b) ? -1 : 1));
 }
 
-export function sample(logits, opts = {}) {
-  const { temperature = 0, topP = 1, topK = 0, minP = 0, seed = 1,
+// La distribución de la que `sample` sortea, sin sortear: penalizaciones, top-k,
+// top-p, min-p y temperatura, en el mismo orden y con las mismas cuentas. Con
+// temperatura 0 devuelve `{ voraz }` (el argmax). Si no, `{ ids, probs, sub }`:
+// los supervivientes por logit descendente y sus pesos sin normalizar (suman
+// `sub`). Toca `logits` en su sitio (las penalizaciones), igual que antes.
+// La usa la decodificación especulativa para aceptar un borrador con su
+// probabilidad real.
+export function distribucion(logits, opts = {}) {
+  const { temperature = 0, topP = 1, topK = 0, minP = 0,
           repeatPenalty = 1.1, repeatLastN = 64, presence = 0, previos = null } = opts;
   const n = logits.length;
 
@@ -96,7 +103,7 @@ export function sample(logits, opts = {}) {
   if (temperature <= 0) {
     let best = 0;
     for (let i = 1; i < n; i++) if (logits[i] > logits[best]) best = i;
-    return best;
+    return { voraz: best };
   }
 
   // Los candidatos ordenados por logit (desc; a igual logit, el índice menor
@@ -134,7 +141,21 @@ export function sample(logits, opts = {}) {
   const probs = new Float64Array(corte);
   let sub = 0;
   for (let i = 0; i < corte; i++) { probs[i] = Math.exp((logits[idx[i]] - max) / temperature); sub += probs[i]; }
+  return { ids: idx.slice(0, corte), probs, sub };
+}
 
+// Sortea de la distribución con el uniforme `u` en [0, 1).
+export function sortea(d, u) {
+  if (d.voraz !== undefined) return d.voraz;
+  let r = u * d.sub;
+  for (let i = 0; i < d.ids.length; i++) {
+    r -= d.probs[i];
+    if (r <= 0) return d.ids[i];
+  }
+  return d.ids[d.ids.length - 1];
+}
+
+export function sample(logits, opts = {}) {
   // Generador propio y con semilla: Math.random() haría irreproducible
   // cualquier prueba de regresión de generación. Uniforme en [0, 1).
   //
@@ -144,13 +165,12 @@ export function sample(logits, opts = {}) {
   // ÚLTIMO superviviente: el menos probable (sin top-k, el peor token de todo el
   // vocabulario). Y semillas consecutivas daban valores correlados. Lo cazó
   // una prueba al pedir que un token improbable saliera alguna vez.
-  let r = uniforme(seed) * sub;
-  for (let i = 0; i < corte; i++) {
-    r -= probs[i];
-    if (r <= 0) return idx[i];
-  }
-  return idx[corte - 1];
+  const d = distribucion(logits, opts);
+  return d.voraz !== undefined ? d.voraz : sortea(d, uniforme(opts.seed ?? 1));
 }
+
+/** El uniforme en [0, 1) de una semilla, el mismo que usa `sample`. */
+export const uniformeDe = (seed) => uniforme(seed);
 
 // Genera tokens uno a uno. El prompt entero va en UNA llamada (prefill) y cada
 // token nuevo en la suya (decode), que es exactamente el patrón real.

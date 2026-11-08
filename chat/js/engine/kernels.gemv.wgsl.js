@@ -76,7 +76,11 @@ export const GEMV2_PARTES = 4;
 
 // Tokens que caben en un despacho: el decode es 1, y 2-3 son los turnos cortos
 // que hoy caen al camino de uno en uno. A partir de 4 manda el GEMM teselado.
-export const GEMV2_MAX_TOKENS = 3;
+// Hasta 6: de 4 a 6 tokens este GEMV ganaba a la tesela del GEMM (hecha para
+// cientos de filas) ×1,1-1,7 con la pasada entera; con 9 ya perdía (cada hilo
+// lleva tantas sumas que se queda sin registros). Lo usan los mensajes de pocas
+// fichas y la comprobación de la decodificación especulativa.
+export const GEMV2_MAX_TOKENS = 6;
 
 // Por formato: elementos y bytes del bloque, bloques que cubre un subgrupo en
 // un paso (siempre 512 pesos), carriles por bloque y cómo se declara el búfer.

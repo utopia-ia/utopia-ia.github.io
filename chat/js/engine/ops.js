@@ -54,6 +54,7 @@ import {
 // lector R, que el buffer sea el que el lector espera (ver repack.js).
 import { TIPOS_R } from './kernels.bloques.wgsl.js';
 import { compruebaBufferR } from './repack.js';
+import { GEMV2_MAX_TOKENS } from './kernels.gemv.wgsl.js';
 
 export { ROPE_NORM, ROPE_NEOX, SSM_HEAD_DIM, SSM_CONV_K };
 
@@ -827,7 +828,7 @@ export function createQuantOps(device, opts = {}) {
     async matmul(type, wBuf, xBuf, rows, k, tokens = 1) {
       // GEMV nuevos (`__ELFFUSS_GEMV2`), de 1 a 3 tokens. Si no aplican al tipo,
       // a la forma o al dispositivo devuelven null y sigue el camino de siempre.
-      const yGemv2 = globalThis.__ELFFUSS_GEMV2 === true && tokens <= 3
+      const yGemv2 = globalThis.__ELFFUSS_GEMV2 === true && tokens <= GEMV2_MAX_TOKENS
         ? await gemv.matmul(type, wBuf, xBuf, rows, k, tokens) : null;
       if (yGemv2) return yGemv2;
       // GEMV2 y GEMM2 se reparten tokens disjuntos: GEMV2 solo de 1 a 3 (arriba);

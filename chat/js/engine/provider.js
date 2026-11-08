@@ -43,6 +43,9 @@ export function escaleraContexto(pedido) {
 }
 import { createTokenizer } from './tokenizer.js';
 import { sample } from './sample.js';
+// Lo que usa la decodificación especulativa, por el espacio de nombres: una copia
+// del muestreador sin estas funciones sigue cargando mientras esté apagada.
+import * as muestreador from './sample.js';
 import { parseGGUF } from './gguf.js';
 // El registro va aparte para que la app pueda sondear disponibilidad sin
 // importarse el motor entero. Ver la cabecera de registro.js.
@@ -1726,7 +1729,118 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   // Sin repartirlo, «la generación va lenta» tiene cuatro causas que se ven
   // idénticas desde fuera. Cuesta tres relojes por token. Los acumuladores
   // nacen con la medida, arriba, para que un turno parado también los cierre.
-  for (let paso = 0; paso < tope; paso++) {
+  // Emitir un token: lo que hacía el final de cada paso, en un sitio, porque la
+  // decodificación especulativa emite varios por paso. Devuelve false al llegar
+  // a una parada o al tope.
+  const emite = (id) => {
+    if (paradas.has(id) || salida.length >= tope) return false;
+    salida.push(id);
+    // La generación se cuenta desde el FIN del prefill, no desde el principio:
+    // si no, el primer token arrastra el prompt entero y los tok/s de
+    // generación de una respuesta corta serían los del prefill disfrazados.
+    m.genTokens = salida.length;
+    m.genMs = ahora() - tPrefill;
+    m.genTokS = m.genMs > 0 ? m.genTokens / (m.genMs / 1000) : 0;
+    if (!m.ttftMs) m.ttftMs = ahora() - tLlamada;
+    avisar(m);
+    // Se decodifica EN STREAMING sobre los bytes de cada token, no redecodificando
+    // la salida entera en cada paso (cuadrático: con miles de tokens de
+    // razonamiento se notaba en la velocidad). El decodificador guarda los bytes
+    // de un carácter a medias hasta que llega el resto, así que no emite rombos
+    // de reemplazo. El texto final es el mismo que el de decodificarlo todo de
+    // una vez: así lo define el estándar.
+    const tD = ahora();
+    const trozo = decS.decode(bytesDe(id), { stream: true });
+    if (trozo) {
+      onToken(trozo);
+      texto += trozo;
+      hecho.texto = texto;
+    }
+    msDecode += ahora() - tD;
+    return true;
+  };
+  // ── DECODIFICACIÓN ESPECULATIVA POR BÚSQUEDA EN EL CONTEXTO ────────────────
+  // (`__ELFFUSS_ESPEC`, en prueba). Al escribir, la tarjeta pasa casi todo el
+  // tiempo LEYENDO los pesos, y leerlos para un token o para nueve cuesta casi lo
+  // mismo. Si los últimos tokens ya aparecieron antes en el contexto (un resumen,
+  // una cita, código que se edita), lo que les siguió allí es un buen borrador:
+  // se pasan el último token y el borrador en una sola pasada, y cada posición
+  // dice qué habría salido. Un borrador se acepta con su probabilidad real
+  // (voraz: si es el más probable); al primer rechazo se sortea el sustituto del
+  // resto de la distribución, que es lo que hace exacta la distribución de
+  // salida. Si se rechaza alguno, el estado vuelve a la foto de antes y se
+  // vuelven a pasar solo los aceptados: la convolución corta de LFM3 no se
+  // puede rebobinar a mitad.
+  const ESPEC = globalThis.__ELFFUSS_ESPEC === true && !modoCpu && typeof sesion?.state?.instantanea === 'function' &&
+    typeof muestreador.distribucion === 'function';
+  const ESPEC_K = 5;   // el último más 5 borradores: 6 tokens, el tope del GEMV de escritura
+  const buscaBorrador = (h) => {
+    for (let n = Math.min(4, h.length - 1); n >= 2; n--) {
+      const ini = h.length - n;
+      for (let i = ini - 1; i >= 0; i--) {
+        let igual = true;
+        for (let j = 0; j < n; j++) if (h[i + j] !== h[ini + j]) { igual = false; break; }
+        if (igual) return h.slice(i + n, Math.min(i + n + ESPEC_K, ini));
+      }
+    }
+    return [];
+  };
+  const especula = async (ultimo, borrador) => {
+    sesion.state.instantanea('espec');
+    const tF = ahora();
+    const { logits, logitsTokens } = await sesion.forward([ultimo, ...borrador], { signal: senal, todosLosLogits: true });
+    await gpu.device.queue.onSubmittedWorkDone();
+    const tL = ahora();
+    const todos = new Float32Array(await readback(gpu.device, logits, 0, logitsTokens * vocab * 4));
+    const tS = ahora(); msForward += tS - tF;
+    especStats.msVerifica += tL - tF; especStats.msLectura += tS - tL;
+    sesion.recycle();
+    if (senal.aborted) throw errorParado();
+    const mu = muestreoEfectivo() || { temperature: 0 };
+    const semilla = mu.seed || 1;
+    const aceptados = [];
+    let final = null;
+    for (let j = 0; j <= borrador.length; j++) {
+      const pos = salida.length + aceptados.length;
+      const d = muestreador.distribucion(todos.subarray(j * vocab, (j + 1) * vocab), { ...mu, previos: ids.concat(salida, aceptados) });
+      if (j === borrador.length) { final = muestreador.sortea(d, muestreador.uniformeDe(semilla + pos)); break; }
+      const b = borrador[j];
+      if (d.voraz !== undefined) { if (d.voraz === b) { aceptados.push(b); continue; } final = d.voraz; break; }
+      const k = d.ids.indexOf(b);
+      const pb = k >= 0 ? d.probs[k] / d.sub : 0;
+      if (muestreador.uniformeDe(semilla + pos) < pb) { aceptados.push(b); continue; }
+      if (k >= 0) { d.sub -= d.probs[k]; d.probs[k] = 0; }
+      final = d.sub > 0 ? muestreador.sortea(d, muestreador.uniformeDe(semilla + pos + 7919)) : b;
+      break;
+    }
+    msSample += ahora() - tS; especStats.msMuestreo += ahora() - tS;
+    if (aceptados.length < borrador.length) {
+      const tR = ahora();
+      sesion.state.restaura('espec');
+      await sesion.forward([ultimo, ...aceptados], { signal: senal });
+      await gpu.device.queue.onSubmittedWorkDone();
+      sesion.recycle();
+      especStats.msRepaso += ahora() - tR; especStats.repasos++;
+    }
+    especStats.pasos++; especStats.propuestos += borrador.length; especStats.aceptados += aceptados.length;
+    return { aceptados, final };
+  };
+  const especStats = { pasos: 0, propuestos: 0, aceptados: 0, msVerifica: 0, msLectura: 0, msMuestreo: 0, msRepaso: 0, repasos: 0 };
+
+  for (let paso = 0; paso < tope && salida.length < tope; paso++) {
+    if (ESPEC && paso > 0 && entrada.length === 1) {
+      const borrador = buscaBorrador(ids.concat(salida));
+      if (borrador.length) {
+        if (senal.aborted) throw errorParado();
+        const { aceptados, final } = await especula(entrada[0], borrador);
+        let sigue = true;
+        for (const a of aceptados) if (!(sigue = emite(a))) break;
+        if (sigue) sigue = emite(final);
+        if (!sigue) break;
+        entrada = [final];
+        continue;
+      }
+    }
     // Parar se mira en DOS sitios por paso: aquí, antes de encolar trabajo, y
     // tras leer los logits, antes de emitir. El segundo es el que garantiza que
     // después de notar el «para» no sale ni un token más: la lectura es la
@@ -1796,34 +1910,7 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
       avisar(m);
     }
 
-    if (paradas.has(id)) break;
-    salida.push(id);
-    // La generación se cuenta desde el FIN del prefill, no desde el principio:
-    // si no, el primer token arrastra el prompt entero y los tok/s de
-    // generación de una respuesta corta serían los del prefill disfrazados.
-    m.genTokens = salida.length;
-    m.genMs = ahora() - tPrefill;
-    m.genTokS = m.genMs > 0 ? m.genTokens / (m.genMs / 1000) : 0;
-    if (!m.ttftMs) m.ttftMs = ahora() - tLlamada;
-    avisar(m);
-
-    // Se decodifica la secuencia ENTERA y se emite la diferencia: un token puede
-    // partir un carácter multibyte por la mitad, y decodificarlo suelto daría un
-    // rombo de reemplazo en mitad de una palabra.
-    // EN STREAMING sobre los bytes de cada token, no redecodificando la salida
-    // entera en cada paso (cuadrático: con miles de tokens de razonamiento se
-    // notaba en la velocidad). El decodificador guarda los bytes de un carácter
-    // a medias hasta que llega el resto, así que tampoco emite rombos de
-    // reemplazo que luego hay que corregir. El texto final es el mismo que el
-    // de decodificarlo todo de una vez: así lo define el estándar.
-    const tD = ahora();
-    const trozo = decS.decode(bytesDe(id), { stream: true });
-    if (trozo) {
-      onToken(trozo);
-      texto += trozo;
-      hecho.texto = texto;
-    }
-    msDecode += ahora() - tD;
+    if (!emite(id)) break;
     entrada = [id];
   }
   { const fin = decS.decode(); if (fin) { onToken(fin); texto += fin; hecho.texto = texto; } }
@@ -1843,6 +1930,10 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   // arriba se comió —un bloque ```tool mal formado, por ejemplo, que el agente
   // consume sin pintar nada—. Distinguirlas es la diferencia entre culpar al
   // motor y culpar al agente, y nos ha costado una tarde entera no poder.
+  if (especStats.pasos) {
+    const e = especStats, p = (x) => (x / e.pasos).toFixed(2);
+    console.log(`[engine] especulativa: ${e.pasos} pasos · ${e.aceptados} de ${e.propuestos} borradores aceptados · por paso: verifica ${p(e.msVerifica)} ms · lectura ${p(e.msLectura)} ms · muestreo ${p(e.msMuestreo)} ms · repaso ${e.repasos ? (e.msRepaso / e.repasos).toFixed(2) : 0} ms (${e.repasos} veces)`);
+  }
   console.log(`[engine] turno: salieron ${salida.length} tokens · ` +
     `crudo ${texto.length} car. · devuelto ${limpio.length} car.` +
     (texto ? ` · empieza por ${JSON.stringify(texto.slice(0, 80))}` : ' · NADA'));

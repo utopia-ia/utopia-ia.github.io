@@ -32,6 +32,7 @@ import {
   creaBufferR, subeReordenadoPorTrozos,
 } from './repack.js';
 import { createFusionOps, fusionActiva, puedeGatherNorma } from './ops.fusion.js';
+import { GEMV2_MAX_TOKENS } from './kernels.gemv.wgsl.js';
 
 const MiB = 1024 ** 2;
 
@@ -104,6 +105,8 @@ export function _setCorta(n) { cortaCada = Math.max(1, n | 0); }
 // de despachos; cortando, empieza con la primera capa. Cortar cada 2, 4 u 8
 // capas queda en medio. No cambia la numérica: la cola respeta el orden.
 let cortaDecode = globalThis.__ELFFUSS_CORTA_DECODE ?? 1;
+// Hasta cuántos tokens una pasada se trata como la de un token (sin respiro). Ver el bucle de capas.
+const PASADA_CORTA = 16;
 export function _setCortaDecode(n) { cortaDecode = Math.max(0, n | 0); }
 export function _getCorta() { return cortaCada; }
 // Cede un frame al bucle de eventos: en el navegador deja que el compositor
@@ -539,7 +542,7 @@ export function createSession(model, opts = {}) {
   const gemv2 = quant.gemv || null;
   const conRotacion = (name) => !!(rot && (rot.pesos.has(name) || rot.inversos.has(name)));
   async function gateUpFusion(i, nrm, tokens) {
-    if (!gemv2 || tokens > 3) return null;
+    if (!gemv2 || tokens > GEMV2_MAX_TOKENS) return null;
     const ng = `blk.${i}.ffn_gate.weight`, nu = `blk.${i}.ffn_up.weight`;
     if (conRotacion(ng) || conRotacion(nu)) return null;
     const wg = W(ng), wu = W(nu);
@@ -555,7 +558,7 @@ export function createSession(model, opts = {}) {
   // entonces van Q/K/V juntas (siete) y la puerta por su GEMV suelto.
   async function qkvFusion(i, nrm, tokens) {
     hechas.clear();
-    if (!gemv2 || tokens > 3) return;
+    if (!gemv2 || tokens > GEMV2_MAX_TOKENS) return;
     const marca = ctx.marcaDe?.get(nrm);
     if (marca === undefined) return;
     const nombres = [`blk.${i}.attn_q.weight`, `blk.${i}.attn_k.weight`, `blk.${i}.attn_v.weight`];
@@ -1117,9 +1120,16 @@ export function createSession(model, opts = {}) {
         // DECODE: cortar el command buffer cada `cortaDecode` capas deja que el
         // dispositivo empiece mientras la CPU sigue grabando el resto del token.
         // Sin respiro (no hace falta: un token no cuelga nada). 0 = no cortar.
-        if (tokens === 1 && cortaDecode > 0 && (capaN + 1) % cortaDecode === 0 && capaN + 1 < hp.layers.length) ctx.corta();
-        if (tokens === 1) capaN++;
-        if (tokens > 1) {
+        // Una pasada CORTA (hasta PASADA_CORTA tokens: la comprobación de la
+        // decodificación especulativa, un mensaje de pocas fichas) va como un
+        // token: dura poco más que uno y no cuelga nada. Con el respiro, toda
+        // pasada de más de un token esperaba un frame entero en su primera capa
+        // (el reloj empieza en −∞): con 2 tokens la pasada duraba más del triple
+        // de lo que trabajaba la tarjeta.
+        const comoUno = tokens <= PASADA_CORTA;
+        if (comoUno && cortaDecode > 0 && (capaN + 1) % cortaDecode === 0 && capaN + 1 < hp.layers.length) ctx.corta();
+        if (comoUno) capaN++;
+        if (!comoUno) {
           if (relojRespiro) {
             relojRespiro.actividad = performance.now();
             if (relojRespiro.frame > ultimoRespiro) ultimoRespiro = relojRespiro.frame;
