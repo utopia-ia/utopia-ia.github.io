@@ -35,7 +35,14 @@ addEventListener('unhandledrejection', (e) => consola.push('[rejection] ' + Stri
 
 async function envia(texto) {
   for (let i = 0; i < texto.length; i += 3800) {
-    await fetch(NTFY + CANAL + '-resultado', { method: 'POST', body: texto.slice(i, i + 3800) }).catch(() => {});
+    // ntfy can refuse (429 when this address used up its daily messages): retry, and say so on the page.
+    for (let n = 1; ; n++) {
+      const r = await fetch(NTFY + CANAL + '-resultado', { method: 'POST', body: texto.slice(i, i + 3800) }).catch(() => null);
+      if (r?.ok) break;
+      log(`✗ no se pudo enviar el resultado (${r ? 'HTTP ' + r.status : 'sin red'}), intento ${n} de 4`);
+      if (n === 4) return;
+      await new Promise((res) => setTimeout(res, 5000 * n));
+    }
   }
 }
 
