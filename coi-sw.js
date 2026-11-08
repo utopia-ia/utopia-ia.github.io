@@ -21,7 +21,7 @@ self.addEventListener('fetch', (e) => {
   const base = new URL(self.registration.scope).pathname;
   const nav = r.mode === 'navigate';
   // The bench page (chat/banco-v2.html) is isolated too: it measures the engine's threads on the processor.
-  if (nav && u.pathname !== base && u.pathname !== base + 'index.html' && u.pathname !== base + 'chat/banco-v2.html') return;
+  if (nav && u.pathname !== base && u.pathname !== base + 'index.html' && u.pathname !== base + 'chat/banco-v2.html' && u.pathname !== base + 'chat/lab.html') return;
   e.respondWith(fetch(r).then((res) => {
     if (res.status === 0 || res.type === 'opaqueredirect') return res;
     const h = new Headers(res.headers);

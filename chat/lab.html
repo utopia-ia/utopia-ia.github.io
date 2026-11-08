@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Laboratorio del motor</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #1d2433; background: #fbfaf7; }
+  pre { background: #fff; border: 1px solid #ddd; padding: .8rem; white-space: pre-wrap; font: 13px/1.45 ui-monospace, monospace; max-height: 60vh; overflow: auto; }
+  .estado { font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Laboratorio del motor</h1>
+<p>Deja esta pestaña abierta y delante, y no uses el equipo mientras trabaja. Recibe pruebas con parámetros y devuelve las
+cifras. Solo ejecuta el motor publicado en este sitio: no ejecuta código que llegue por el canal.</p>
+<p class="estado" id="estado">Arrancando…</p>
+<pre id="log"></pre>
+<script type="module">
+// El canal va en la dirección, detrás de «#»: el navegador no lo envía al servidor.
+const CANAL = (location.hash.match(/canal=([a-f0-9]{16})/) || [])[1];
+const NTFY = 'https://ntfy.sh/';
+const MOTORES = { chat: new URL('./js/engine/', location.href).href, lab: new URL('./js/lab/', location.href).href };   // la copia en pruebas: junto a la del chat, comparte su almacén de modelos
+const $ = (id) => document.getElementById(id);
+const log = (s) => { $('log').textContent = (s + '\n' + $('log').textContent).slice(0, 20000); };
+const estado = (s) => { $('estado').textContent = s; };
+const med = (a) => { const v = [...a].sort((x, y) => x - y); return v[v.length >> 1]; };
+
+// Lo que sale por la consola también vuelve: errores y avisos, para depurar en remoto.
+const consola = [];
+for (const k of ['error', 'warn', 'info']) { const o = console[k]; console[k] = (...a) => { consola.push(`[${k}] ` + a.map(String).join(' ').slice(0, 400)); if (consola.length > 60) consola.shift(); o(...a); }; }
+addEventListener('error', (e) => consola.push('[pageerror] ' + (e.message || e) + ' @ ' + (e.filename || '') + ':' + (e.lineno || '')));
+addEventListener('unhandledrejection', (e) => consola.push('[rejection] ' + String(e.reason?.stack || e.reason).slice(0, 400)));
+
+async function envia(texto) {
+  for (let i = 0; i < texto.length; i += 3800) {
+    await fetch(NTFY + CANAL + '-resultado', { method: 'POST', body: texto.slice(i, i + 3800) }).catch(() => {});
+  }
+}
+
+// ── Los trabajos: parámetros, nunca código ──────────────────────────────────
+const Q = 'Lee este texto y resúmelo en cinco frases claras.\n\n' + Array.from({ length: 10 }, (_, i) => `(${i + 1}) Los faros guiaron durante siglos a los barcos que se acercaban a la costa de noche. Cada faro tenía su propio ritmo de destellos, de modo que los marineros podían saber dónde estaban solo con mirar la luz. `).join('');
+const PERMITIDOS = /^__ELFFUSS_[A-Z0-9_]+$/;
+function ponFlags(flags = {}) {
+  const antes = {};
+  for (const [k, v] of Object.entries(flags)) { if (!PERMITIDOS.test(k)) throw new Error('interruptor no permitido: ' + k); antes[k] = globalThis[k]; if (v === null) delete globalThis[k]; else globalThis[k] = v; }
+  return () => { for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } };
+}
+
+async function info() {
+  const a = await navigator.gpu?.requestAdapter();
+  return JSON.stringify({ vendor: a?.info?.vendor, arch: a?.info?.architecture, sg: [a?.info?.subgroupMinSize, a?.info?.subgroupMaxSize], f16: a?.features?.has('shader-f16'), maxBuffer: a?.limits?.maxBufferSize, aislada: self.crossOriginIsolated, nucleos: navigator.hardwareConcurrency, ua: navigator.userAgent.slice(0, 120) });
+}
+
+let prov = null, provMotor = null, provClave = null;
+async function proveedor(motor, clave, cpu, hilos) {
+  const base = MOTORES[motor] || MOTORES.chat;
+  const e = await import(base + 'provider.js');
+  const firma = `${base}|${clave}|${cpu}|${hilos}`;
+  if (prov && provClave === firma) return e;
+  if (prov) await prov.unload();
+  globalThis.__ELFFUSS_CPU = !!cpu; globalThis.__ELFFUSS_HILOS = hilos || undefined;
+  globalThis.__ELFFUSS_PREFIJO_DISCO = false;   // sin prefijos guardados: si no, la lectura sale falsa
+  e.configure(clave);
+  await e.load((s) => estado('cargando: ' + String(s).slice(0, 80)));
+  prov = e; provMotor = base; provClave = firma;
+  return e;
+}
+
+async function lfm3(t) {
+  const e = await proveedor(t.motor, t.modelo || 'lfm3-1.7b-q4', t.cpu, t.hilos);
+  const M = await import((MOTORES[t.motor] || MOTORES.chat) + 'model.js');
+  e.setSampling({ temperature: 0, seed: 7, maxTokens: t.escribir || 128, razonar: false });
+  const corre = async () => { e.__olvidaPrefijo(); let x = ''; await e.chat([{ role: 'user', content: Q }], 'Eres útil.', (p) => { x += p; }); const m = e.ultimaMedida(); return { lee: m.prefillTokS, esc: m.genTokS, n: m.promptTokens, x }; };
+  await corre();
+  const variantes = t.variantes || [{ nombre: 'defecto' }];
+  const res = new Map(); let ref = null;
+  for (let r = 0; r < (t.rondas || 3); r++) {
+    for (const v of (r % 2 ? [...variantes].reverse() : variantes)) {
+      estado(`${t.id}: ronda ${r + 1} · ${v.nombre}`);
+      const quita = ponFlags(v.flags);
+      if (v.lote) M._setLote(v.lote);
+      let x; try { x = await corre(); } catch (err) { x = { lee: 0, esc: 0, x: 'ERROR ' + String(err.message).slice(0, 120) }; } finally { quita(); if (v.lote && t.loteBase) M._setLote(t.loteBase); }
+      if (!ref) ref = x;
+      (res.get(v.nombre) || res.set(v.nombre, []).get(v.nombre)).push(x);
+    }
+  }
+  const b = res.get(variantes[0].nombre), L0 = med(b.map((x) => x.lee)), E0 = med(b.map((x) => x.esc));
+  const filas = [`prompt ${ref.n} tok · ${variantes[0].nombre}: lee ${L0.toFixed(0)} tok/s · escribe ${E0.toFixed(1)} tok/s`];
+  for (const [k, a] of res) {
+    if (k === variantes[0].nombre) continue;
+    const err = a.find((x) => String(x.x).startsWith('ERROR'));
+    filas.push(`  ${k}: lee ×${(med(a.map((x) => x.lee)) / L0).toFixed(2)} · escribe ×${(med(a.map((x) => x.esc)) / E0).toFixed(2)}${err ? ' · ' + err.x : a.every((x) => x.x === ref.x) ? '' : ' · texto distinto'}`);
+  }
+  return filas.join('\n');
+}
+
+async function perfil(t) {
+  const base = MOTORES[t.motor] || MOTORES.chat;
+  if (prov) { await prov.unload(); prov = null; }
+  const quita = ponFlags(t.flags);
+  try {
+    const { requestDevice } = await import(base + 'device.js');
+    const { loadModel, createSession } = await import(base + 'model.js');
+    const { aplicaRapido } = await import(base + 'provider.js');
+    const { MODELS } = await import(base + 'registro.js');
+    const url = MODELS[t.modelo || 'lfm3-1.7b-q4'].url;
+    const size = +(await fetch(url, { headers: { Range: 'bytes=0-0' } })).headers.get('content-range').split('/')[1];
+    aplicaRapido('lfm3');
+    const gpu = await requestDevice({ label: 'lab', timestamp: true });
+    if (!gpu.subgroupSize && globalThis.__ELFFUSS_GEMM2_TESELA === undefined) globalThis.__ELFFUSS_GEMM2_TESELA = true;
+    const dev = gpu.device;
+    const ranged = { size, async slice(o, l) { return await (await fetch(url, { headers: { Range: `bytes=${o}-${o + l - 1}` } })).arrayBuffer(); } };
+    estado(`${t.id}: cargando`);
+    const model = await loadModel(ranged, dev, { debug: false, subgroupSize: gpu.subgroupSize });
+    const ctx = model.ops.ctx, ses = createSession(model, { contextLen: 2048 });
+    let tok = 500;
+    await ses.forward(Array.from({ length: 64 }, (_, i) => 1000 + i)); await dev.queue.onSubmittedWorkDone(); ses.recycle();
+    for (let i = 0; i < 6; i++) { await ses.forward([tok++]); await dev.queue.onSubmittedWorkDone(); ses.recycle(); }
+    const ms = []; for (let i = 0; i < 12; i++) { const t0 = performance.now(); await ses.forward([tok++]); await dev.queue.onSubmittedWorkDone(); ms.push(performance.now() - t0); ses.recycle(); }
+    const filas = [`subgrupo ${gpu.subgroupSize || 'variable'} · un token ${med(ms).toFixed(2)} ms (${(1000 / med(ms)).toFixed(1)} tok/s)`];
+    if (dev.features.has('timestamp-query') && t.porKernel !== false) {
+      const acum = new Map();
+      for (let i = 0; i < 4; i++) { ctx.perfilar(400); await ses.forward([tok++]); const r = await ctx.finProfile(); ses.recycle(); for (const x of r.porLabel) { const a = acum.get(x.lab) || { ns: 0, n: 0 }; a.ns += x.ns; a.n += x.veces; acum.set(x.lab, a); } }
+      for (const [k, a] of [...acum].sort((x, y) => y[1].ns - x[1].ns).slice(0, 12)) filas.push(`  ${(a.ns / 4 / 1e3).toFixed(0).padStart(6)} µs ${String(a.n / 4).padStart(3)}× ${k}`);
+    }
+    await ses.destroy?.(); dev.destroy();
+    return filas.join('\n');
+  } finally { quita(); }
+}
+
+async function ejecuta(t) {
+  if (t.tipo === 'info') return await info();
+  if (t.tipo === 'lfm3') return await lfm3(t);
+  if (t.tipo === 'perfil') return await perfil(t);
+  if (t.tipo === 'recargar') { sessionStorage.setItem('lab-desde', String(t._id)); setTimeout(() => location.reload(), 300); return 'recargando'; }
+  if (t.tipo === 'aislar') {
+    if (self.crossOriginIsolated) return 'ya aislada';
+    await navigator.serviceWorker.register(new URL('../coi-sw.js', location.href), { scope: new URL('../', location.href).pathname });
+    await navigator.serviceWorker.ready;
+    sessionStorage.setItem('lab-desde', String(t._id)); setTimeout(() => location.reload(), 300); return 'aislando y recargando';
+  }
+  if (t.tipo === 'desaislar') {
+    for (const r of await navigator.serviceWorker.getRegistrations()) if (/coi-sw\.js$/.test(r.active?.scriptURL || '')) await r.unregister();
+    sessionStorage.setItem('lab-desde', String(t._id)); setTimeout(() => location.reload(), 300); return 'sin aislar, recargando';
+  }
+  throw new Error('trabajo desconocido: ' + t.tipo);
+}
+
+// ── El bucle: pide trabajos al canal cada pocos segundos ────────────────────
+let desde = sessionStorage.getItem('lab-desde') || String(Math.floor(Date.now() / 1000));
+const hechos = new Set(JSON.parse(sessionStorage.getItem('lab-hechos') || '[]'));
+async function bucle() {
+  for (;;) {
+    let lineas = [];
+    try {
+      const r = await fetch(`${NTFY}${CANAL}-trabajo/json?poll=1&since=${desde}`);
+      lineas = (await r.text()).split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((m) => m.event === 'message');
+    } catch { /* la red: se reintenta */ }
+    for (const m of lineas) {
+      desde = m.id; sessionStorage.setItem('lab-desde', desde);
+      if (hechos.has(m.id)) continue;   // el canal puede devolver otra vez lo ya visto
+      hechos.add(m.id); sessionStorage.setItem('lab-hechos', JSON.stringify([...hechos].slice(-200)));
+      let t; try { t = JSON.parse(m.message); } catch { continue; }
+      t._id = m.id;
+      consola.length = 0;
+      log(`→ ${t.id || '?'} (${t.tipo})`); estado(`trabajando: ${t.id || t.tipo}`);
+      const t0 = performance.now();
+      let r; try { r = await ejecuta(t); } catch (err) { r = 'ERROR ' + String(err.stack || err.message).slice(0, 1500); }
+      const txt = `## ${t.id || t.tipo} (${((performance.now() - t0) / 1000).toFixed(0)} s)\n${r}` + (consola.length ? '\n-- consola --\n' + consola.slice(-25).join('\n') : '');
+      log(txt); await envia(txt);
+      if (r === 'recargando' || /recargando/.test(String(r))) return;
+    }
+    estado(`esperando trabajos · aislada ${self.crossOriginIsolated}`);
+    await new Promise((ok) => setTimeout(ok, 3000));
+  }
+}
+if (!CANAL) estado('Falta el canal en la dirección (…lab.html#canal=…).');
+else { envia(`## conectada\n${await info()}`); bucle(); }
+</script>
+</body>
+</html>
