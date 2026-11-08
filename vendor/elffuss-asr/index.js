@@ -13,6 +13,9 @@ import { Task } from '../elffuss-ai/sdk/core/task.js';
 import { getModel, defaultModelId, variantFiles } from '../elffuss-ai/sdk/core/registry.js';
 import { probeWebGPU, chooseVariant } from '../elffuss-ai/sdk/core/device.js';
 
+// The voice mode's neural voice activity (Silero VAD v5), next to Whisper: same store, same registry.
+export { VoiceActivity, FRAME as VAD_FRAME } from './vad.js';
+
 let registryP = null;
 /** The pinned registry of this task (whisper-base at one revision of onnx-community/whisper-base). */
 export function registry() {

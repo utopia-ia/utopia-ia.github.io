@@ -3,6 +3,9 @@
  "tasks": {
   "speech-to-text": {
    "default": "speech-to-text/whisper-base"
+  },
+  "voice-activity": {
+   "default": "voice-activity/silero-vad-v5"
   }
  },
  "models": {
@@ -177,6 +180,54 @@
        "main:onnx/decoder_model_merged.onnx"
       ],
       "bytes": 970919779
+     }
+    ]
+   },
+   "notes": {
+    "es": null,
+    "en": null
+   }
+  },
+  "voice-activity/silero-vad-v5": {
+   "task": "voice-activity",
+   "name": {
+    "es": "Silero VAD v5",
+    "en": "Silero VAD v5"
+   },
+   "license": "MIT",
+   "author": "onnx-community",
+   "base": {
+    "name": "Silero VAD",
+    "author": "Silero Team",
+    "url": "https://github.com/snakers4/silero-vad",
+    "license": "MIT"
+   },
+   "flag": null,
+   "redistributes": true,
+   "runtime": "onnxruntime-web",
+   "pipeline": null,
+   "parts": {
+    "main": {
+     "repo": "onnx-community/silero-vad",
+     "revision": "e71cae966052b992a7eca6b17738916ce0eca4ec",
+     "license": "MIT",
+     "author": "onnx-community",
+     "files": {
+      "onnx/model.onnx": {
+       "size": 2243022,
+       "sha256": "a4a068cd6cf1ea8355b84327595838ca748ec29a25bc91fc82e6c299ccdc5808"
+      }
+     }
+    }
+   },
+   "devices": {
+    "wasm": [
+     {
+      "dtype": "fp32",
+      "files": [
+       "main:onnx/model.onnx"
+      ],
+      "bytes": 2243022
      }
     ]
    },

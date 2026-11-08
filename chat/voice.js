@@ -47,10 +47,10 @@ const WORDS = {
       review: '¿Lo envío?', thinking: 'Pensando…', speaking: 'Elffuss responde', paused: 'En pausa', error: 'No ha podido empezar',
     },
     hints: {
-      listening: 'Habla cuando quieras', hearing: 'Toca para terminar', thinking: 'Toca para interrumpir', speaking: '',
+      listening: 'Habla cuando quieras', hearing: 'Toca el círculo para enviarlo', thinking: 'Toca para interrumpir', speaking: '',
       paused: 'Toca el círculo para seguir', loading: '', transcribing: '', review: '', error: 'Toca el círculo para reintentar',
     },
-    orbLabel: { listening: 'Pausar la escucha', hearing: 'Terminar la frase', thinking: 'Interrumpir', speaking: 'Interrumpir', paused: 'Seguir escuchando', error: 'Reintentar', loading: 'Preparando', transcribing: 'Escribiendo', review: 'Esperando' },
+    orbLabel: { listening: 'Pausar la escucha', hearing: 'Enviar lo que he dicho', thinking: 'Interrumpir', speaking: 'Interrumpir', paused: 'Seguir escuchando', error: 'Reintentar', loading: 'Preparando', transcribing: 'Escribiendo', review: 'Esperando' },
     send: 'Enviar', discard: 'Descartar', pauseBtn: 'Pausar', resumeBtn: 'Seguir', exit: 'Volver al texto', showChat: 'Ver el chat', backTo: 'Volver a la conversación',
     attention: 'El chat necesita tu respuesta',
     consentTitle: { speaker: 'Leer las respuestas en voz alta', conversation: 'Hablar con Elffuss' },
@@ -83,10 +83,10 @@ const WORDS = {
       review: 'Send it?', thinking: 'Thinking…', speaking: 'Elffuss is answering', paused: 'Paused', error: 'Could not start',
     },
     hints: {
-      listening: 'Talk whenever you like', hearing: 'Tap to finish', thinking: 'Tap to interrupt', speaking: '',
+      listening: 'Talk whenever you like', hearing: 'Tap the circle to send it', thinking: 'Tap to interrupt', speaking: '',
       paused: 'Tap the circle to go on', loading: '', transcribing: '', review: '', error: 'Tap the circle to try again',
     },
-    orbLabel: { listening: 'Pause listening', hearing: 'Finish the sentence', thinking: 'Interrupt', speaking: 'Interrupt', paused: 'Listen again', error: 'Try again', loading: 'Getting ready', transcribing: 'Writing', review: 'Waiting' },
+    orbLabel: { listening: 'Pause listening', hearing: 'Send what I said', thinking: 'Interrupt', speaking: 'Interrupt', paused: 'Listen again', error: 'Try again', loading: 'Getting ready', transcribing: 'Writing', review: 'Waiting' },
     send: 'Send', discard: 'Discard', pauseBtn: 'Pause', resumeBtn: 'Go on', exit: 'Back to text', showChat: 'See the chat', backTo: 'Back to the conversation',
     attention: 'The chat needs your answer',
     consentTitle: { speaker: 'Read the answers aloud', conversation: 'Talk with Elffuss' },
@@ -193,9 +193,33 @@ export function createVoice(hooks) {
     return asrLoading;
   }
   async function disposeModels() {
-    const a = asr, s = speech;
-    asr = null; speech = null; speechLangs = new Set();
-    await Promise.all([a?.task.dispose?.(), s?.dispose?.()].map((p) => Promise.resolve(p).catch(() => {})));
+    const a = asr, s = speech, v = vad;
+    asr = null; speech = null; speechLangs = new Set(); vad = null; vadLoading = null; debug.vad = 'off';
+    await Promise.all([a?.task.dispose?.(), s?.dispose?.(), v?.dispose?.()].map((p) => Promise.resolve(p).catch(() => {})));
+  }
+
+  // The neural voice activity (Silero VAD v5, 2.2 MB, processor): what tells the end of a sentence in a noisy room.
+  // Without it (it did not load, or this copy of the page has none) the endpointer goes on with loudness alone.
+  let vad = null, vadLoading = null;
+  function loadVad() {
+    if (vad || vadLoading) return vadLoading || Promise.resolve(vad);
+    debug.vad = 'loading';
+    vadLoading = (async () => {
+      try {
+        const mod = await hooks.kit.asr();
+        if (!mod.VoiceActivity) { debug.vad = 'energy'; return null; }
+        const e = await hooks.kit.env();
+        const t = new mod.VoiceActivity({ store: e.store, runtime: e.runtime, registry: await mod.registry() });
+        await t.load?.();
+        vad = t; debug.vad = 'silero';
+        return t;
+      } catch (err) {
+        console.warn('[voice] the voice activity model did not load: loudness only', err);
+        debug.vad = 'energy'; debug.vadError = String(err?.message || err);
+        return null;
+      } finally { vadLoading = null; }
+    })();
+    return vadLoading;
   }
 
   /** What the mode would download here: { voice, chat } bytes still missing. */
@@ -216,6 +240,7 @@ export function createVoice(hooks) {
         const est = await am.SpeechToText.estimate({ store: e.store, ...(model ? { model } : {}) }).catch(() => null);
         if (est?.fits === false) return { error: est.reason || 'device-unsupported' };
         if (est) bytes += est.missingBytes ?? est.downloadBytes ?? 0;
+        if (am.VoiceActivity) { const v = await am.VoiceActivity.estimate({ store: e.store, registry: await am.registry() }).catch(() => null); if (v) bytes += v.missingBytes ?? 0; }
       }
     } catch (err) { console.warn('[voice] estimate', err); }
     const c = hooks.chatModel?.() || { missing: false, bytes: 0 };
@@ -263,6 +288,8 @@ export function createVoice(hooks) {
     m.node.connect?.(mute); mute.connect(ac.destination);
     mic = m;
     ep.reset();
+    frames.length = 0; frameFill = 0; vadQueue.length = 0;
+    vadReset = true;
     debug.mic = 'open';
     try { debug.micSettings = stream.getAudioTracks()[0].getSettings(); } catch { /* — */ }
   }
@@ -289,9 +316,47 @@ export function createVoice(hooks) {
     },
   };
   let early = null;              // a sentence said and finished while the models were still loading
+  // The microphone in frames of 512 samples (32 ms at 16 kHz), the VAD's frame. With the VAD, frames wait for their
+  // probability (two at a time, one call in flight: about 64 ms behind); without it they go straight to loudness.
+  const FRAME = ep.frameSamples;
+  const frames = [];
+  let frameBuf = new Float32Array(FRAME), frameFill = 0;
+  const vadQueue = [];
+  let vadBusy = false, vadReset = true;
+  debug.vadRuns = 0; debug.vadMs = 0;
   function samples(x) {
     if (state.mode !== 'conversation' || state.phase === 'paused') return;
-    for (const e of ep.push(x)) {
+    let i = 0;
+    while (i < x.length) {
+      const k = Math.min(x.length - i, FRAME - frameFill);
+      frameBuf.set(x.subarray(i, i + k), frameFill);
+      frameFill += k; i += k;
+      if (frameFill === FRAME) { (vad ? vadQueue : frames).push(frameBuf); frameBuf = new Float32Array(FRAME); frameFill = 0; }
+    }
+    if (frames.length) { const f = join(frames.splice(0)); handle(ep.push(f)); }
+    if (vad) pumpVad();
+  }
+  const join = (list) => { const a = new Float32Array(list.length * FRAME); list.forEach((f, k) => a.set(f, k * FRAME)); return a; };
+  function pumpVad() {
+    if (vadBusy || !vadQueue.length || !vad) return;
+    const batch = join(vadQueue.splice(0, Math.min(vadQueue.length, 4)));
+    const copy = batch.slice();                       // the VAD's copy goes to its Worker
+    vadBusy = true;
+    const t0 = performance.now();
+    const v = vad;
+    v.run(copy, vadReset ? { reset: true } : {}).then((probs) => {
+      vadReset = false;
+      debug.vadRuns++; debug.vadMs += performance.now() - t0; debug.vadP = probs[probs.length - 1];
+      if (mic && state.mode === 'conversation' && state.phase !== 'paused') handle(ep.push(batch, Array.from(probs)));
+    }, (err) => {
+      // The VAD failed while running: loudness from now on, and these frames are not lost.
+      console.warn('[voice] voice activity failed: loudness only', err);
+      if (vad === v) { vad = null; debug.vad = 'energy'; }
+      handle(ep.push(batch));
+    }).finally(() => { vadBusy = false; pumpVad(); });
+  }
+  function handle(events) {
+    for (const e of events) {
       // Still loading (the microphone opens first, for its permission): what is said meanwhile is kept, not lost.
       if (state.phase === 'loading') { if (e.type === 'end') { early = e.audio; log('speech-kept'); } continue; }
       if (e.type === 'start') { log('speech-start'); dispatch({ type: 'SPEECH_START' }); startPartials(); }
@@ -492,7 +557,7 @@ export function createVoice(hooks) {
       if (!speakingModes()) return;
       if (tts.items.length) await hooks.unloadLlm().catch(() => {});
       if (state.mode === 'conversation') {
-        try { await loadAsr(); if (!['paused', 'error', 'off'].includes(state.phase)) await openMic(); } catch (err) { console.warn('[voice] after the turn', err); noteError(err); dispatch({ type: 'FAILED', error: err?.code || 'failed' }); }
+        try { await Promise.all([loadAsr(), loadVad()]); if (!['paused', 'error', 'off'].includes(state.phase)) await openMic(); } catch (err) { console.warn('[voice] after the turn', err); noteError(err); dispatch({ type: 'FAILED', error: err?.code || 'failed' }); }
       }
       pump();
     }
@@ -521,7 +586,7 @@ export function createVoice(hooks) {
         if (mode === 'conversation') {
           await openMic();                        // the permission question first: it is the one the user must answer
           if (policy === 'turns') await hooks.unloadLlm().catch(() => {});
-          await Promise.all([loadAsr(), loadSpeech(hooks.lang()).catch((e) => console.warn('[voice] voice', e))]);
+          await Promise.all([loadAsr(), loadVad(), loadSpeech(hooks.lang()).catch((e) => console.warn('[voice] voice', e))]);
         } else {
           await loadSpeech(hooks.lang()).catch((e) => console.warn('[voice] voice', e));
         }
@@ -546,7 +611,7 @@ export function createVoice(hooks) {
         case 'mic.close': closeMic(); break;
         case 'mic.pause': stopPartials(); closeMic(); break;
         case 'mic.resume': openMic().catch((err) => dispatch({ type: 'FAILED', error: err?.code || 'no-audio' })); break;
-        case 'mic.end': { stopPartials(); const r = ep.end(); if (r?.type === 'end') dispatch({ type: 'SPEECH_END', audio: r.audio }); else dispatch({ type: 'SPEECH_DROP' }); break; }
+        case 'mic.end': { log('mic-end'); stopPartials(); const r = ep.end(); if (r?.type === 'end') dispatch({ type: 'SPEECH_END', audio: r.audio }); else dispatch({ type: 'SPEECH_DROP' }); break; }
         case 'barge.on': ep.setBargeIn(true); break;
         case 'barge.off': ep.setBargeIn(false); break;
         case 'asr.final': finalAsr(e.audio); break;
@@ -585,7 +650,7 @@ export function createVoice(hooks) {
     dispatch({ type: 'MODE', mode });
   }
   // The models stay while the speaker is on; leaving every voice mode lets them go.
-  function disposeIfIdle() { setTimeout(() => { if (state.mode === 'text') disposeModels(); else if (state.mode === 'speaker' && asr) { const a = asr; asr = null; a.task.dispose?.(); } }, 0); }
+  function disposeIfIdle() { setTimeout(() => { if (state.mode === 'text') disposeModels(); else if (state.mode === 'speaker') { const a = asr, v = vad; asr = null; vad = null; debug.vad = 'off'; a?.task.dispose?.(); v?.dispose?.(); } }, 0); }
 
   // ---------- The top bar control and its panel ----------
   const chip = hooks.chip;

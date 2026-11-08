@@ -16,17 +16,21 @@
 // ---------- Voice activity and end of utterance ----------
 export const RATE = 16000;
 export const ENDPOINT_DEFAULTS = Object.freeze({
-  frameMs: 20,
-  silenceMs: 800,        // «pausa para terminar»: this much quiet after speech ends the utterance
-  onsetMs: 120,          // this much voice in a row starts one (a click or a cough is shorter)
+  frameMs: 32,           // 512 samples: the frame of the neural VAD (Silero v5), used by the fallback too
+  silenceMs: 800,        // «pausa para terminar»: this much without speech after speech ends the utterance
+  onsetMs: 96,           // this much voice in a row starts one (a click or a cough is shorter)
   minSpeechMs: 300,      // shorter than this, it was not something said: dropped
   preRollMs: 300,        // kept from before the onset, so the first syllable is not cut
-  maxMs: 28000,          // Whisper reads 30 s at a time: past this the utterance is ended
-  marginDb: 10,          // above the noise floor by this much is voice
-  holdDb: 4,             // once speaking, a frame this much under the margin still counts (hysteresis)
-  minDb: -52,            // never voice below this, whatever the floor
-  bargeMarginDb: 18,     // while the answer is being read: louder than the floor by this much…
-  bargeOnsetMs: 260,     // …and for this long, to interrupt it (its own voice leaking back is not the user)
+  maxMs: 20000,          // past this the utterance is ended (and sent): noise can never keep it open for ever
+  // With the neural VAD (push(samples, probs)): speech starts above startP and goes on above endP (hysteresis), and
+  // only while the frame is also louder than the background by vadMarginDb / vadHoldDb: a voice in the background
+  // (a café) is speech to the VAD, but it is not the user, who is nearer and louder.
+  startP: 0.5, endP: 0.35, vadMarginDb: 6, vadHoldDb: 3,
+  // Without it (energy only): louder than the background by marginDb, or by twice its usual swing plus 4 dB if more.
+  marginDb: 10, holdDb: 4,
+  minDb: -52,            // never voice below this, whatever the background
+  bargeMarginDb: 18,     // while the answer is being read: louder than the background by this much…
+  bargeOnsetMs: 256,     // …and for this long, to interrupt it (its own voice leaking back is not the user)
   echoMarginDb: 10,      // with the answer's level known (setReference): louder than its echo by this much
 });
 
@@ -38,32 +42,50 @@ export function frameDb(x) {
 }
 
 /**
- * Voice activity with an end-of-utterance detector, on mono samples at 16 kHz. push() takes any number of samples and
- * returns what happened in them: { type: 'start' } when an utterance begins (after `onsetMs` of voice), { type: 'end',
- * audio, ms, reason } when it ends (`silenceMs` of quiet, `maxMs`, or end()), { type: 'drop', ms } for one too short.
- * `level` is the last frame's loudness from 0 to 1. setBargeIn(true) makes it harder to start (the answer is playing).
+ * Voice activity with an end-of-utterance detector, on mono samples at 16 kHz, in frames of `frameMs` (512 samples).
+ * push(samples) uses loudness only; push(samples, probs) also the neural VAD's speech probability of each whole frame
+ * in `samples` (Silero v5: vendor/elffuss-asr/vad.js). Returns what happened: { type: 'start' } when an utterance
+ * begins, { type: 'end', audio, ms, reason } when it ends (reason 'silence', 'max', or 'tap' for end()), { type:
+ * 'drop', ms } for one too short. `level` is the last frame's loudness from 0 to 1. setBargeIn(true) makes it harder to
+ * start (the answer is playing).
+ *
+ * The background is a mean and a swing of the frames that are not speech (by the VAD, or by loudness), learnt all the
+ * time nobody speaks. The old floor (down at once, up slowly) sat at the quietest moments of the noise, so a café, a
+ * street or music rose above it all the time and the end of what was said never came (Kiko on the iPhone: «no captura
+ * bien cuándo dejas de hablar si hay ruido de fondo»; measured in tests/voice-vad-bench.mjs).
  */
 export function createEndpointer(options = {}) {
   const o = { ...ENDPOINT_DEFAULTS, ...options };
   const frameLen = Math.round((RATE * o.frameMs) / 1000);
   const ms = (frames) => frames * o.frameMs;
   const pre = [];                       // the frames before an onset (pre-roll and the onset itself)
-  const preMax = Math.ceil((o.preRollMs + o.bargeOnsetMs) / o.frameMs);
   let carry = new Float32Array(0);
-  let floor = -60;                      // the room's noise, in dB
-  let floorSeen = 0;                    // frames that taught the floor (the first ones learn faster)
+  let noise = -60, swing = 3;           // the background: mean level (dB) and its usual swing (dB)
+  let seen = 0;                         // background frames learnt (the first ones count more)
   let speaking = false, run = 0, quiet = 0, voiced = 0;
   let out = [];                         // frames of the utterance
   let barge = false;
-  let level = 0, lastDb = -100;
+  let level = 0, lastDb = -100, lastP = null, usedVad = false;
   // The answer's own voice at the playhead (dB), when it plays: its echo at the microphone sits a roughly constant
   // `coupling` below or above it. That coupling is learnt while the answer plays (down fast, up slowly), and only a
   // voice clearly louder than the echo it explains counts as the user. Measured with the real voice and the real
   // microphone settings (tests/voice-echo.mjs): without it, an echo above about -36 dBFS interrupted the answer.
   let reference = null, coupling = null;
 
-  const margin = () => (barge ? o.bargeMarginDb : o.marginDb);
-  const onset = () => Math.round((barge ? o.bargeOnsetMs : o.onsetMs) / o.frameMs);
+  const preMax = () => Math.ceil((o.preRollMs + o.bargeOnsetMs) / o.frameMs);
+  const onset = () => Math.max(1, Math.round((barge ? o.bargeOnsetMs : o.onsetMs) / o.frameMs));
+  // A noise that swings (voices, music, traffic) needs a wider margin than a steady one (a fan): its usual swing counts.
+  const above = (vad) => (barge ? o.bargeMarginDb : vad ? Math.max(o.vadMarginDb, 1.5 * swing + 2) : Math.max(o.marginDb, 2 * swing + 4));
+  const hold = (vad) => (vad ? Math.max(o.vadHoldDb, 1.5 * swing) : Math.max(o.marginDb, 2 * swing + 4) - o.holdDb);
+
+  function learn(db) {
+    const a = seen < 30 ? 0.2 : 0.04;
+    noise += a * (db - noise);
+    swing += a * (Math.abs(db - noise) - swing);
+    noise = Math.min(-20, Math.max(-85, noise));
+    swing = Math.min(12, Math.max(1, swing));
+    seen++;
+  }
 
   function finish(reason) {
     const frames = out;
@@ -79,36 +101,38 @@ export function createEndpointer(options = {}) {
     return { type: 'end', audio, ms: ms(used.length), reason };
   }
 
-  function frame(f, events) {
+  function frame(f, p, events) {
+    const vad = p != null;
     const db = frameDb(f);
-    lastDb = db;
+    lastDb = db; lastP = p;
     level = Math.min(1, Math.max(0, (db + 60) / 50));
-    let loud = db > Math.max(o.minDb, floor + margin());
+    let loud = db > Math.max(o.minDb, noise + above(vad)) && (!vad || p > o.startP);
+    let echoing = false;                 // the answer is playing: what is heard may be its echo, not the background
     if (barge && reference) {
       const ref = reference();
       if (ref > -70) {
+        echoing = true;
         const d = db - ref;
         // It starts as loud as the answer itself (no echo cancellation, the speaker by the microphone) and comes down
         // to what is heard: a frame with sound says the echo is that loud; a quiet one, that it is at most the room.
         if (coupling == null) coupling = 0;
-        const seen = db > floor + 6 ? d : floor + 6 - ref;
-        coupling += (seen < coupling ? 0.2 : 0.02) * (seen - coupling);
+        const heard = db > noise + 6 ? d : noise + 6 - ref;
+        coupling += (heard < coupling ? 0.2 : 0.02) * (heard - coupling);
         if (d < coupling + o.echoMarginDb) loud = false;
       }
     }
     if (!speaking) {
-      // The floor follows the room while nobody speaks: down at once, up slowly (a voice does not raise it).
-      if (!loud || floorSeen < 10) {
-        const a = floorSeen < 25 ? 0.25 : db < floor ? 0.2 : 0.015;
-        floor += a * (db - floor);
-        floor = Math.min(-28, Math.max(-80, floor));
-        floorSeen++;
-      }
+      // The background is learnt from what is not speech: by the VAD, or, without it, what is not loud. A café's
+      // voices are speech to the VAD but quiet: they are learnt too unless they are loud enough to start.
+      if (!echoing && ((vad ? p < o.startP || !loud : !loud) || seen < 8)) learn(db);
       pre.push(f);
-      if (pre.length > preMax) pre.shift();
+      while (pre.length > preMax()) pre.shift();
       // While the answer plays the count leaks instead of resetting: one frame that the echo gate doubts does not
       // throw away a user who is clearly talking over it.
-      run = loud ? run + 1 : barge && reference ? Math.max(0, run - 1) : 0;
+      // Nothing starts before the background is known (its first third of a second): the first frames would be
+      // measured against a guess, and an utterance «started» in the noise would never end.
+      if (seen < 10) loud = false;
+      run = loud ? run + 1 : barge ? Math.max(0, run - 1) : 0;
       if (run >= onset()) {
         speaking = true; quiet = 0; voiced = run;
         const keep = Math.min(pre.length, run + Math.round(o.preRollMs / o.frameMs));
@@ -119,7 +143,7 @@ export function createEndpointer(options = {}) {
       return;
     }
     out.push(f);
-    const still = db > Math.max(o.minDb, floor + o.marginDb - o.holdDb);
+    const still = db > Math.max(o.minDb, noise + hold(vad)) && (!vad || p > o.endP);
     if (still) { quiet = 0; voiced++; } else quiet++;
     if (ms(quiet) >= o.silenceMs) events.push(finish('silence'));
     else if (ms(out.length) >= o.maxMs) events.push(finish('max'));
@@ -128,8 +152,13 @@ export function createEndpointer(options = {}) {
   return {
     get level() { return level; },
     get db() { return lastDb; },
-    get floor() { return floor; },
+    /** The VAD's last speech probability, or null without it. */
+    get p() { return lastP; },
+    get floor() { return noise; },
+    get swing() { return swing; },
     get speaking() { return speaking; },
+    get vad() { return usedVad; },
+    get frameSamples() { return frameLen; },
     get options() { return { ...o }; },
     set(opts) { Object.assign(o, opts); },
     setBargeIn(on) { barge = !!on; if (!on) coupling = null; },
@@ -143,12 +172,21 @@ export function createEndpointer(options = {}) {
       out.forEach((f, i) => a.set(f, i * frameLen));
       return a;
     },
-    push(samples) {
+    /**
+     * `samples`: any number of samples (whole frames and a rest kept for later). `probs`: the VAD's probability of
+     * each whole frame, in order; then `samples` must be whole frames (voice.js sends the VAD whole frames).
+     */
+    push(samples, probs = null) {
       const events = [];
+      if (probs) {
+        usedVad = true;
+        for (let k = 0; k < probs.length && (k + 1) * frameLen <= samples.length; k++) frame(samples.slice(k * frameLen, (k + 1) * frameLen), probs[k], events);
+        return events;
+      }
       let x = samples;
       if (carry.length) { x = new Float32Array(carry.length + samples.length); x.set(carry); x.set(samples, carry.length); }
       let i = 0;
-      for (; i + frameLen <= x.length; i += frameLen) frame(x.slice(i, i + frameLen), events);
+      for (; i + frameLen <= x.length; i += frameLen) frame(x.slice(i, i + frameLen), null, events);
       carry = x.slice(i);
       return events;
     },
