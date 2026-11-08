@@ -511,7 +511,17 @@ const SIMD_PROBE = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 
 const cpuCan = () => { try { return typeof Worker === 'function' && WebAssembly.validate(SIMD_PROBE); } catch { return false; } };
 // `?cpu` in the address forces the processor even where WebGPU works: to try, on any device, what a browser without
 // it gets.
-const FORCE_CPU = /[?&]cpu(=|&|$)/.test(location.search);
+// On a phone or a tablet it takes `?cpu=force`: a stale `?cpu` (from a shared link, a bookmark, an app added to the
+// home screen from that address) kept an iPhone whose graphics card works on the processor, several times slower.
+// There a plain `?cpu` is ignored and taken out of the address, so a reload or the home-screen app does not bring it
+// back.
+const CPU_ASKED = /[?&]cpu(=|&|$)/.test(location.search);
+const TOUCH_DEVICE = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1 || navigator.userAgentData?.mobile === true || /Mobi|iPhone|iPad|Android/i.test(navigator.userAgent);
+const FORCE_CPU = CPU_ASKED && (!TOUCH_DEVICE || /[?&]cpu=force(&|$)/.test(location.search));
+if (CPU_ASKED && !FORCE_CPU) {
+  try { const u = new URL(location.href); u.searchParams.delete('cpu'); history.replaceState(history.state, '', u); } catch { /* — */ }
+  console.info('[chat] ?cpu ignored on a touch device (use ?cpu=force to try the processor here)');
+}
 async function pickDevice() {
   if (FORCE_CPU && cpuCan() && MODELS['lfm3-1.7b-q4']) return { ok: true, id: 'lfm3-1.7b-q4', cpu: true, why: '' };
   const r = await pickGpu();
@@ -2106,6 +2116,17 @@ function retryWithoutReasoning(li, mine, msg) {
 // in the thread, with its own reasoning.
 const MAX_STEPS = 5;
 
+// The reasoning budget of a step, from the speed the engine measured on the last turn (engine.ultimaMedida().genTokS):
+// about 4 s of writing (1.5 s when the answer is read aloud), never more than the fixed caps of before (512 on the
+// first step, 256 after), which are also what it gets while nothing has been measured yet (64 in a voice turn).
+const THINK_SECONDS = { text: 4, voice: 1.5 };
+function thinkBudget(step, voiceTurn) {
+  const cap = step === 0 ? 512 : 256;
+  const tps = engine?.ultimaMedida?.()?.genTokS;
+  if (!(tps > 0)) return voiceTurn ? 64 : cap;
+  return Math.max(0, Math.min(cap, Math.round(tps * (voiceTurn ? THINK_SECONDS.voice : THINK_SECONDS.text))));
+}
+
 // ---------- Guards: a turn never hangs in silence ----------
 // Kiko, on a phone, asking for a hairdresser in Málaga: «antes de terminar se ha quedado colgado y no ha seguido».
 // Each piece that can wait has its own limit, and every limit ends in something the visitor can read:
@@ -2308,6 +2329,11 @@ async function runTurn(li, mine, ctl, reason) {
   // On the processor it answers straight away: a thousand tokens of reasoning are minutes before the first letter
   // there, and the engine keeps a shorter context on the processor, where the reasoning budget does not fit.
   if (device.cpu) reason = false;
+  // A turn the voice reads aloud (Altavoz, Conversación) answers at once: no reasoning unless the voice settings ask for
+  // it («Pensar antes de responder»), and then only about 1.5 s of it. On a phone that wrote 2 tokens a second, 512
+  // tokens of reasoning were minutes of «Pensando…» with nothing said (Kiko: «se queda en thinking»).
+  const voiceTurn = voice?.fastTurn?.() || null;
+  if (voiceTurn && !voiceTurn.think) reason = false;
   // The media tools go in this turn's prompt only when it needs them (media-intent.js: an attachment, a media item
   // named, or a request to make one), decided once, without the model. Otherwise the prompt is the one from before
   // the media tools, byte for byte, and the engine reuses its prefix.
@@ -2390,7 +2416,7 @@ async function runTurn(li, mine, ctl, reason) {
       } else {
         const now = await untilStopped(liveContext(), ctl.signal);
         if (appTurn === null) appTurn = needsAppTools(userText, { open: now.open, names: (now.apps || []).map((a) => a.name) }).apps;
-        const full = withTurnContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang) }), CONTEXT_LABEL[lang]);
+        const full = withTurnContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang), voice: !!voiceTurn }), CONTEXT_LABEL[lang]);
         const system = systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn, apps: appTurn });
         // Measured against the model's real context before the engine sees it (fitTurn).
         const fit = fitTurn(full, system, reason);
@@ -2404,7 +2430,10 @@ async function runTurn(li, mine, ctl, reason) {
         stepReason = fit.reason;
         // A thinking budget: the first step has to choose (answer, search, a tool); the later ones already have the
         // results in front of them. Without it a greeting thought over a thousand tokens before its first word.
-        engine.setSampling?.({ razonar: stepReason === false ? false : null, pensar: step === 0 ? 512 : 256 });
+        // The budget is a time, not a number of tokens: what the last turn measured it writes in a second, times 4 s
+        // (1.5 s in a voice turn), within the old caps; under 32 tokens it does not reason at all (0 would be «no limit»).
+        const think = stepReason === false ? 0 : thinkBudget(step, !!voiceTurn);
+        engine.setSampling?.({ razonar: stepReason === false || think < 32 ? false : null, pensar: think });
         let queued = false;
         const paint = () => {
           queued = false;
@@ -3121,7 +3150,9 @@ async function boot() {
 
   try {
     Object.assign(device, await within(pickDevice, BOOT_MS.device, () => (cpuCan() && MODELS['lfm3-1.7b-q4']
-      ? { ok: true, id: 'lfm3-1.7b-q4', cpu: true, why: '' } : { ok: false, why: 'whyNoAdapter' }), 'choosing the device'));
+      ? { ok: true, id: 'lfm3-1.7b-q4', cpu: true, why: 'timeout' } : { ok: false, why: 'whyNoAdapter' }), 'choosing the device'));
+    // What this tab runs, for the Web Inspector of a phone: the model, processor or graphics card, and why.
+    globalThis.__chatDevice = { ...device, forcedCpu: FORCE_CPU, askedCpu: CPU_ASKED, touch: TOUCH_DEVICE };
     markDetected();
     if (!device.ok) { showNoGpu(device.why); return; }
     if (await within(isolateForCpu, BOOT_MS.isolate, false, 'isolating the page')) return;   // the page reloads isolated

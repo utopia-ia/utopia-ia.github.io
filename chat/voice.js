@@ -19,14 +19,14 @@
 // written. On a phone a tab has about 2 GB and the chat model alone takes most of it, so they take turns: the voice
 // models go while the chat model answers, and the chat model goes while the answer is read and the user speaks.
 
-import { createEndpointer, resampleTo16k, createChunker, textLang, isHallucination, reduce, initialState, parseWav, MODES } from './voice-core.js';
+import { createEndpointer, resampleTo16k, createChunker, speakable, textLang, isHallucination, reduce, initialState, parseWav, MODES } from './voice-core.js';
 import { createOrbs } from './voice-orb.js';
 import { formatBytes } from './media-tools.js';
 
 const KEY = 'elffuss.voice';
 const SPEED = { min: 0.8, max: 1.4, step: 0.05 };
 const PAUSE = { min: 400, max: 2000, step: 100 };
-const DEFAULTS = { mode: 'text', voiceEs: 'es_elffuss', voiceEn: 'af_heart', speed: 1, pauseMs: 800, autoSend: true, seen: false };
+const DEFAULTS = { mode: 'text', voiceEs: 'es_elffuss', voiceEn: 'af_heart', speed: 1, pauseMs: 800, autoSend: true, think: false, seen: false };
 // The voices when the SDK copy does not list them (its audio module gives VOICES).
 const FALLBACK_VOICES = [
   { id: 'es_elffuss', name: 'Elffuss', lang: 'es', gender: 'f', model: 'moss' }, { id: 'ef_dora', name: 'Dora', lang: 'es', gender: 'f', model: 'kokoro' },
@@ -39,7 +39,7 @@ const WORDS = {
     chip: 'Voz', modeTitle: 'Modo de voz',
     modes: { text: ['Texto', 'Escribes y lees, como siempre'], speaker: ['Altavoz', 'Lee en voz alta cada respuesta'], conversation: ['Conversación', 'Hablas y te contesta, sin manos'] },
     settings: 'Ajustes', voiceEs: 'Voz en español', voiceEn: 'Voz en inglés', speed: 'Velocidad', pause: 'Pausa para terminar',
-    pauseHint: 'Silencio que hace falta para dar por acabada tu frase', autoSend: 'Enviar al terminar de hablar',
+    pauseHint: 'Silencio que hace falta para dar por acabada tu frase', autoSend: 'Enviar al terminar de hablar', think: 'Pensar antes de responder', thinkHint: 'Más lento: en un móvil, muchos segundos antes de la primera palabra', filler: 'Un momento…',
     onDevice: 'Todo ocurre en este dispositivo: ni tu voz ni el texto salen del navegador.',
     voiceName: (v) => (v.model === 'moss' ? `${v.name}, la voz de Elffuss` : `${v.name} · ${v.gender === 'm' ? 'masculina' : 'femenina'}`),
     phases: {
@@ -75,7 +75,7 @@ const WORDS = {
     chip: 'Voice', modeTitle: 'Voice mode',
     modes: { text: ['Text', 'You type and read, as usual'], speaker: ['Speaker', 'Reads every answer aloud'], conversation: ['Conversation', 'You talk, it answers, hands free'] },
     settings: 'Settings', voiceEs: 'Spanish voice', voiceEn: 'English voice', speed: 'Speed', pause: 'Pause to finish',
-    pauseHint: 'How much silence ends what you are saying', autoSend: 'Send when you stop talking',
+    pauseHint: 'How much silence ends what you are saying', autoSend: 'Send when you stop talking', think: 'Think before answering', thinkHint: 'Slower: on a phone, many seconds before the first word', filler: 'One moment…',
     onDevice: 'Everything happens on this device: neither your voice nor the text leaves the browser.',
     voiceName: (v) => (v.model === 'moss' ? `${v.name}, Elffuss's own voice` : `${v.name} · ${v.gender === 'm' ? 'male' : 'female'}`),
     phases: {
@@ -457,6 +457,7 @@ export function createVoice(hooks) {
   const speakingModes = () => state.mode === 'speaker' || state.mode === 'conversation';
   function ttsReset() { ttsStop(); tts.lang = null; }
   function ttsStop() {
+    stopFiller();
     tts.gen++;
     tts.ctl?.abort(); tts.ctl = null;
     for (const it of tts.items) if (it.url) URL.revokeObjectURL(it.url);
@@ -503,6 +504,7 @@ export function createVoice(hooks) {
         player.src = head.url;
         player.playbackRate = head.rate || 1;
         if ('preservesPitch' in player) player.preservesPitch = true;
+        stopFiller();
         player.play().then(() => { log('audio-start'); dispatch({ type: 'AUDIO_START' }); }, (err) => { console.warn('[voice] play', err); endOfSentence(head); });
         render();
       });
@@ -529,6 +531,9 @@ export function createVoice(hooks) {
   function answer(key, text, final = false) {
     if (!speakingModes() || state.phase === 'off' || !key) return;
     if (state.mode === 'conversation' && !['thinking', 'speaking'].includes(state.phase)) return;
+    // What it is writing, on the conversation screen while nothing is read yet (the end of it, as it grows).
+    const said = speakable(text);
+    if (said && said !== liveText) { liveText = said; if (state.phase === 'thinking' && !liveQueued) { liveQueued = true; requestAnimationFrame(() => { liveQueued = false; render(); }); } }
     let c = chunkers.get(key);
     if (!c) { c = createChunker(); chunkers.set(key, c); }
     const out = final ? c.flush(text) : c.push(text);
@@ -546,8 +551,39 @@ export function createVoice(hooks) {
       await disposeModels();
     }
   }
-  function turnStarted() { log('turn-start'); dispatch({ type: 'TURN_START' }); }
+  // ---------- Fast voice turns ----------
+  // A turn the voice reads aloud answers at once (chat.js: no reasoning unless «Pensar antes de responder», a short
+  // spoken answer). If after FILLER_MS there is still nothing to read, a short «Un momento…» (made once with the voice
+  // while it is loaded, and kept) says it is working: on a phone the first sentence can take a while.
+  const FILLER_MS = 3000;
+  const fillers = new Map();           // lang → { url, pcm }
+  const fillerPlayer = new Audio();
+  let fillerTimer = 0, liveText = '', liveQueued = false;
+  async function makeFiller(lang) {
+    if (fillers.has(lang) || !speech) return;
+    fillers.set(lang, null);
+    try {
+      const voice = voiceFor(lang);
+      const r = await speech.run({ text: WORDS[lang].filler, lang, voice, ...(isKokoro(voice) ? { speed: settings.speed } : {}) });
+      fillers.set(lang, { url: URL.createObjectURL(r.blob) });
+    } catch (err) { fillers.delete(lang); console.warn('[voice] filler', err); }
+  }
+  function armFiller() {
+    clearTimeout(fillerTimer);
+    fillerTimer = setTimeout(() => {
+      const waiting = (state.mode === 'conversation' && state.phase === 'thinking') || (state.mode === 'speaker' && state.phase === 'idle' && !state.turnDone);
+      if (!waiting || tts.playing || tts.items.some((it) => it.url)) return;
+      const f = fillers.get(lastLang || hooks.lang()) || fillers.get(hooks.lang());
+      if (!f?.url) return;
+      log('filler');
+      fillerPlayer.src = f.url;
+      fillerPlayer.play().catch(() => {});
+    }, FILLER_MS);
+  }
+  function stopFiller() { clearTimeout(fillerTimer); fillerTimer = 0; try { fillerPlayer.pause(); } catch { /* — */ } }
+  function turnStarted() { log('turn-start'); liveText = ''; dispatch({ type: 'TURN_START' }); if (speakingModes()) armFiller(); }
   async function turnEnded({ msg = null } = {}) {
+    stopFiller();
     if (msg) answer(msg, msg.content || '', true);
     log('turn-end');
     const speaking = !!(tts.items.length || tts.playing);
@@ -586,9 +622,9 @@ export function createVoice(hooks) {
         if (mode === 'conversation') {
           await openMic();                        // the permission question first: it is the one the user must answer
           if (policy === 'turns') await hooks.unloadLlm().catch(() => {});
-          await Promise.all([loadAsr(), loadVad(), loadSpeech(hooks.lang()).catch((e) => console.warn('[voice] voice', e))]);
+          await Promise.all([loadAsr(), loadVad(), loadSpeech(hooks.lang()).then(() => makeFiller(hooks.lang())).catch((e) => console.warn('[voice] voice', e))]);
         } else {
-          await loadSpeech(hooks.lang()).catch((e) => console.warn('[voice] voice', e));
+          await loadSpeech(hooks.lang()).then(() => makeFiller(hooks.lang())).catch((e) => console.warn('[voice] voice', e));
         }
         if (state.mode !== mode) { if (mode === 'conversation' && state.mode !== 'conversation') closeMic(); return; }
         loadPct = null;
@@ -765,8 +801,16 @@ export function createVoice(hooks) {
     const autoRow = document.createElement('label'); autoRow.className = 'vp-field vp-switch';
     const autoLabel = document.createElement('span'); autoLabel.className = 'vp-label'; autoLabel.textContent = W.autoSend;
     autoRow.append(autoLabel, auto);
+    const think = document.createElement('input');
+    think.type = 'checkbox'; think.className = 'vp-check'; think.checked = !!settings.think; think.setAttribute('role', 'switch');
+    think.setAttribute('aria-describedby', 'vp-think-hint');
+    think.addEventListener('change', () => { settings.think = think.checked; keep(); });
+    const thinkRow = document.createElement('label'); thinkRow.className = 'vp-field vp-switch';
+    const thinkLabel = document.createElement('span'); thinkLabel.className = 'vp-label'; thinkLabel.textContent = W.think;
+    const thinkHint = document.createElement('span'); thinkHint.id = 'vp-think-hint'; thinkHint.className = 'vp-hint'; thinkHint.textContent = W.thinkHint;
+    thinkRow.append(thinkLabel, think, thinkHint);
     sets.append(sh, field(W.voiceEs, voiceSelect('es')), field(W.voiceEn, voiceSelect('en')),
-      field(W.speed, speedIn, speedOut), pauseRow, autoRow);
+      field(W.speed, speedIn, speedOut), pauseRow, autoRow, thinkRow);
     const fine = document.createElement('p'); fine.className = 'vp-fine'; fine.textContent = W.onDevice;
     pop.append(head, fine, group, sets);
   }
@@ -857,7 +901,7 @@ export function createVoice(hooks) {
       : ph === 'error' && !(state.error in W.errors && state.error !== 'failed') ? lastError : '';
     q('.vs-heard').textContent = heardLine;
     q('.vs-heard').classList.toggle('is-partial', ph === 'hearing');
-    q('.vs-caption').textContent = ph === 'speaking' ? caption : '';
+    q('.vs-caption').textContent = ph === 'speaking' ? caption : ph === 'thinking' && liveText ? (liveText.length > 140 ? '…' + liveText.slice(-140) : liveText) : '';
     q('.vs-review').hidden = ph !== 'review';
     q('.vs-send').textContent = W.send; q('.vs-discard').textContent = W.discard;
     const pb = q('.vs-pause');
@@ -909,6 +953,8 @@ export function createVoice(hooks) {
     /** The text of one step of an answer so far; `key` is that step's message. */
     answer,
     beforeTurn, turnStarted, turnEnded,
+    /** In a voice mode, how this turn should answer: { think } (the «Pensar antes de responder» setting); else null. */
+    fastTurn: () => (speakingModes() ? { think: !!settings.think } : null),
     /** The user typed in the box: reading stops. */
     userTyped: () => { if (state.mode !== 'text' && (state.phase === 'speaking' || tts.items.length)) dispatch({ type: 'USER_TYPED' }); },
     stopPressed: () => dispatch({ type: 'STOP_PRESSED' }),

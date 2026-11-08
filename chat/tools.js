@@ -334,7 +334,7 @@ export const CONTEXT_LABEL = { en: 'CONTEXT NOW (the real state, use it when you
 // what is relevant to this turn, within a budget set by the model's context), or '' when there is none. `today` is the
 // user's local date with its weekday (memory-wire.js `today`); it changes once a day, so it lives here and never in
 // the system prompt.
-export function contextBlock(lang, { apps, open, memory = '', today = '' }) {
+export function contextBlock(lang, { apps, open, memory = '', today = '', voice = false }) {
   const es = lang === 'es';
   const none = es ? 'ninguna' : 'none';
   const list = apps === null ? (es ? 'no disponible ahora' : 'not available now')
@@ -344,6 +344,10 @@ export function contextBlock(lang, { apps, open, memory = '', today = '' }) {
     (es ? 'Apps del usuario: ' : 'The user\'s apps: ') + list,
     (es ? 'App abierta en el panel: ' : 'App open in the panel: ') + (open || none),
     ...(memory ? [memory] : []),
+    // The answer is read aloud (the voice mode): short, and said as speech. In the turn's context, not in the system
+    // prompt, so the engine keeps reusing the system prompt it already read.
+    ...(voice ? [es ? 'Modo de voz: tu respuesta se leerá en voz alta. Responde en 1 a 3 frases cortas, como hablando, sin listas, tablas, código ni enlaces, salvo que te pidan más detalle.'
+      : 'Voice mode: your answer is read aloud. Answer in 1 to 3 short sentences, as speech, with no lists, tables, code or links, unless asked for more detail.'] : []),
   ].join('\n');
 }
 
