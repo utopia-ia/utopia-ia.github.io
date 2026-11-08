@@ -634,5 +634,9 @@ export function createMediaTools(hooks) {
     }
   }
 
-  return { run, transcribe, describe, base, isMediaTool, lines: mediaToolLines, rule: mediaRule };
+  // What the voice mode (voice.js) needs to keep its own speech models loaded across a conversation: the SDK modules,
+  // the model store and the runtimes, and Whisper. It never takes `busy`: its models stay while the mode is on.
+  const voiceKit = { env, module, asr: () => (hooks.loadAsr || ((u) => import(u)))(new URL('../elffuss-asr/index.js', base).href) };
+
+  return { run, transcribe, describe, base, isMediaTool, lines: mediaToolLines, rule: mediaRule, voiceKit };
 }

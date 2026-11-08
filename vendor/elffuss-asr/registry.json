@@ -106,6 +106,84 @@
     "es": null,
     "en": null
    }
+  },
+  "speech-to-text/whisper-small": {
+   "task": "speech-to-text",
+   "name": {
+    "es": "Whisper small",
+    "en": "Whisper small"
+   },
+   "license": "Apache-2.0",
+   "author": "onnx-community",
+   "base": {
+    "name": "whisper-small",
+    "author": "OpenAI",
+    "url": "https://huggingface.co/openai/whisper-small",
+    "license": "Apache-2.0"
+   },
+   "flag": null,
+   "redistributes": true,
+   "runtime": "transformers.js",
+   "pipeline": "automatic-speech-recognition",
+   "parts": {
+    "main": {
+     "repo": "onnx-community/whisper-small",
+     "revision": "36050c46d777d46dc4b5f43f6d90574fc38f8732",
+     "license": "Apache-2.0",
+     "author": "onnx-community",
+     "files": {
+      "config.json": {
+       "size": 2227,
+       "gitOid": "b0447377b1ade057f991a6a0870d2a91de762f7f"
+      },
+      "generation_config.json": {
+       "size": 3893,
+       "gitOid": "703dc78ee83e87fca3ace72170253cdfe4cd2d13"
+      },
+      "onnx/decoder_model_merged.onnx": {
+       "size": 615324301,
+       "sha256": "6ed5e35feaba79ad2e89b368ddc7b4ddaa3c00b4c37a664375d3428a76fecc6a"
+      },
+      "onnx/encoder_model.onnx": {
+       "size": 352825870,
+       "sha256": "b37cd6625dc36f9178ec7539a1876b9680ea26a910097e092be39dc766320c7b"
+      },
+      "preprocessor_config.json": {
+       "size": 339,
+       "gitOid": "91876762a536a746d268353c5cba57286e76b058"
+      },
+      "tokenizer.json": {
+       "size": 2480466,
+       "gitOid": "1e95340ff836fad1b5932e800fb7b8c5e6d78a74"
+      },
+      "tokenizer_config.json": {
+       "size": 282683,
+       "gitOid": "d13b786c04765fb1a06492b53587752cd67665ea"
+      }
+     }
+    }
+   },
+   "devices": {
+    "webgpu": [
+     {
+      "dtype": "fp32",
+      "files": [
+       "main:config.json",
+       "main:generation_config.json",
+       "main:preprocessor_config.json",
+       "main:tokenizer.json",
+       "main:tokenizer_config.json",
+       "main:onnx/encoder_model.onnx",
+       "main:onnx/decoder_model_merged.onnx"
+      ],
+      "bytes": 970919779
+     }
+    ]
+   },
+   "notes": {
+    "es": null,
+    "en": null
+   }
   }
  }
 }

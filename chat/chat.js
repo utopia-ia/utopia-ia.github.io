@@ -31,6 +31,7 @@ import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloa
 import { needsMediaTools, hasMediaIn, editTarget } from './media-intent.js';
 import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
 import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, recorderPanel, peaksCanvas, startRecording, toMono16k, keepVoiceNote } from './attach.js';
+import { createVoice } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -447,6 +448,8 @@ let markDetected, markChecked;
 const detected = new Promise((r) => { markDetected = r; });   // the device has been looked at
 const checked = new Promise((r) => { markChecked = r; });     // and the store asked whether the model is there
 let turn = null;                     // { ctl, chatId } while a turn is running
+let voice = null;                    // the voice mode (voice.js), once the device can run the chat
+let voiceGateOk = false;             // the voice mode's first-use question already said yes to the chat model's download
 const CURRENT = 'elffuss-home.chat';
 
 // On the public copy the Q8_0 is read from Hugging Face instead of m1.elffuss.com: the copy has to work where
@@ -1099,6 +1102,7 @@ const granted = new Set((() => { try { return JSON.parse(localStorage.getItem(GR
 
 function requirePerm(scope, detail, li, signal) {
   if (granted.has(scope)) return Promise.resolve(true);
+  voice?.attention();
   return new Promise((resolve, reject) => {
     const box = el('div', 'ask');
     box.setAttribute('role', 'group');
@@ -1390,6 +1394,7 @@ async function makeOfferedApp(li, m) {
 
 // The download question of a media model, the chat's own download plate: what, how much, and two buttons.
 function mediaGate(li, q, signal) {
+  voice?.attention();
   return new Promise((resolve, reject) => {
     const box = el('div', 'gate media-gate');
     box.setAttribute('role', 'group');
@@ -2279,12 +2284,20 @@ async function runTurn(li, mine, ctl, reason) {
   const webSources = [];            // pages the web tools brought this turn, for a turn that closes on them
   const clock = visibleClock();
   try {
+    // The voice mode: on a phone its models leave the tab's memory to the chat model first (voice.js).
+    if (voice) { await voice.beforeTurn(); voice.turnStarted(); }
     await checked;
     // The pictures of the message are looked at before the model answers (once: the words are kept with them), so the
     // model reads what they show instead of «you cannot see it».
     await lookAtAttachments(li, mine, lastUser, ctl.signal);
     if (modelState !== 'ready') {
-      if (modelState === 'missing') { stage = 'gate'; await gate(li, ctl.signal); }
+      if (modelState === 'missing') {
+        stage = 'gate';
+        // Already said yes in the voice mode's first-use question; otherwise the chat shows its own (and the
+        // conversation screen steps aside so it can be seen).
+        if (voiceGateOk) voiceGateOk = false;
+        else { voice?.attention(); await gate(li, ctl.signal); }
+      }
       if (ctl.signal.aborted) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
       stage = 'load';
       const box = progressBox(li);
@@ -2349,6 +2362,7 @@ async function runTurn(li, mine, ctl, reason) {
           msg.thinking = p.thinking; msg.content = stripEcho(p.content);
           paintBot(li, msg, { writing: true, thinkingLive: !p.content });
           scrollEnd();
+          voice?.answer(msg, msg.content);     // read aloud as it is written (Altavoz, Conversación)
         };
         // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it when it
         // fits the history to the model's context: no `reserveTokens` on top, or it would be subtracted twice.
@@ -2481,6 +2495,7 @@ async function runTurn(li, mine, ctl, reason) {
 
       msg.call = callSummary(call);
       msg.result = null;
+      voice?.answer(msg, msg.content, true);   // the words before the call, if any
       paintBot(li, msg);
       if (call.tool.startsWith('memory.')) freshCards.add(msg);
       const stepMsg = msg, stepLi = li;
@@ -2590,7 +2605,8 @@ async function runTurn(li, mine, ctl, reason) {
         li.append(b);
       }
     }
-    if (chat === mine) ui.input.focus({ preventScroll: true });
+    if (chat === mine && !(voice && voice.mode === 'conversation')) ui.input.focus({ preventScroll: true });
+    voice?.turnEnded({ msg: msg && !msg.stopped && !failed && !msg.call ? msg : null });
   }
   // After the final answer of a typed turn: the facts that were in context, and at most one proposal from what the user
   // wrote («I live in Valencia» → «Remember this?»). The turn is already over: the user can type meanwhile.
@@ -2635,6 +2651,7 @@ async function afterTurn(li, msg, mt, mine) {
 
 // The memory's grant card, in the step that wants to save: resolves with the user's answer.
 function askMemory(li, c, signal) {
+  voice?.attention();
   return new Promise((resolve, reject) => {
     const slot = el('div', 'mem-ask');
     li.append(slot);
@@ -2908,7 +2925,7 @@ function wireAttach() {
 // Text that arrives in the box by pasting or dropping is not typed: the message it ends up in cannot ground a memory.
 let pasted = false;
 function wire() {
-  ui.input.addEventListener('input', () => { if (!ui.input.value) pasted = false; autosize(); });
+  ui.input.addEventListener('input', () => { if (!ui.input.value) pasted = false; autosize(); voice?.userTyped(); });
   ui.input.addEventListener('paste', () => { pasted = true; });
   ui.input.addEventListener('drop', () => { pasted = true; });
   ui.input.addEventListener('keydown', (e) => {
@@ -2927,7 +2944,7 @@ function wire() {
     autosize();
     send(text, { typed, attach });
   });
-  ui.stop.addEventListener('click', stopTurn);
+  ui.stop.addEventListener('click', () => { voice?.stopPressed(); stopTurn(); });
   wireAttach();
   wireMic();
   for (const b of document.querySelectorAll('[data-new-chat]')) b.addEventListener('click', () => { startNew(); closeSide(); });
@@ -3017,6 +3034,23 @@ async function boot() {
   setModelState('checking');
   setModelState((await isCached()) ? 'cached' : 'missing');
   markChecked();
+  startVoice();
+}
+
+// The voice mode: its control in the top bar, the reading aloud and the conversation screen (voice.js). What it hears
+// is sent as the user's own words; it reads the answer as the turn writes it.
+function startVoice() {
+  if (voice || mirror) return;
+  try {
+    voice = createVoice({
+      kit: media.voiceKit, lang: () => lang, live,
+      send: async (text) => { if (turn) await stopTurn(); send(text, { typed: true }); },
+      stopTurn, turnRunning: () => !!turn, unloadLlm,
+      chatModel: () => ({ missing: modelState === 'missing', bytes: model()?.bytes || 0 }),
+      approveChatModel: () => { voiceGateOk = true; },
+      chip: $('voice-btn'), stage: document.querySelector('.stage'), input: ui.input,
+    });
+  } catch (e) { console.warn('[chat] voice mode did not start', e); }
 }
 
 boot().catch((e) => console.error('[chat] boot failed', e));

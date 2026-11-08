@@ -752,15 +752,12 @@ export async function load(onProgress = () => {}) {
       // El lote del prefill es del MODELO: 32 por defecto (el bucle recurrente
       // del SSM corre entero dentro de un despacho y un lote largo cuelga el
       // escritorio); el registro lo sube donde no hay ese bucle.
-      // `loteOrdenador` es para donde la memoria de la pestaña no aprieta: un
-      // ordenador, tenga o no subgrupos de tamaño fijo. Una gráfica integrada con
-      // subgrupos variables (8 a 32) leía con 512 ×1,55 más rápido que con 128,
-      // misma escritura (8-nov). Quedan fuera los móviles y la tableta que se
-      // presenta como ordenador: un «Macintosh» con pantalla táctil.
-      const nav = globalThis.navigator;
-      const movil = nav?.userAgentData?.mobile === true || /Mobi/i.test(nav?.userAgent || '')
-        || (/Macintosh/.test(nav?.userAgent || '') && (nav?.maxTouchPoints || 0) > 1);
-      _setLote((m.loteOrdenador && !movil) ? m.loteOrdenador : (m.lote || 32));
+      // `loteOrdenador` es para donde la memoria de la pestaña no aprieta: con
+      // subgrupos (el teléfono no los tiene; ver la tesela de arriba) y sin
+      // agente de móvil, que hay móviles con subgrupos.
+      const movil = globalThis.navigator?.userAgentData?.mobile === true
+        || /Mobi/i.test(globalThis.navigator?.userAgent || '');
+      _setLote((m.loteOrdenador && gpu?.subgroupSize && !movil) ? m.loteOrdenador : (m.lote || 32));
       pensante = /<think>/.test(String(info.meta['tokenizer.chat_template'] || ''));
       formato = formatoDePlantilla(info.meta['tokenizer.chat_template'], tk, info.meta['general.architecture']);
 
@@ -776,8 +773,6 @@ export async function load(onProgress = () => {}) {
         const ctxCpu = Math.min(m.ctx || CTX_CPU, CTX_CPU);
         sesion = await creaSesionCpuRemota(ranged, {
           contextLen: ctxCpu,
-          // `__ELFFUSS_HILOS` fija los hilos (para medir); sin él, la mitad de los núcleos, como mucho 8.
-          hilos: Number.isInteger(globalThis.__ELFFUSS_HILOS) ? globalThis.__ELFFUSS_HILOS : 0,
           onProgress: (h, t) => {
             const pct = Math.floor(h / t * 100);
             if (pct === ultimoCpu) return;
