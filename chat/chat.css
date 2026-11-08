@@ -748,3 +748,6 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
   .top-actions #mem-btn .mem-label { display: inline; }
   .top-actions #mem-btn.is-down::after { top: 6px; right: 6px; }
 }
+
+/* What the model is thinking about, on the folded line while it thinks: one line, cut with an ellipsis. */
+.think-now { display: inline-block; max-width: min(60ch, 70vw); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; vertical-align: bottom; opacity: .7; font-style: italic; }

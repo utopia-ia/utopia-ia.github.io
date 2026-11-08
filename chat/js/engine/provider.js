@@ -974,6 +974,8 @@ export function setSampling(opts) {
     // true/false lo fuerza; null, lo que diga el registro del modelo.
     // `razonar: null` explícito vuelve a lo del registro; sin la clave, se conserva.
     razonar: 'razonar' in opts ? (typeof opts.razonar === 'boolean' ? opts.razonar : null) : (a.razonar ?? null),
+    // Tokens de razonamiento como mucho (0 = sin límite aparte del tope): ver el bucle de generación.
+    pensar: opts.pensar ?? a.pensar ?? 0,
   };
 }
 
@@ -1059,6 +1061,10 @@ function razonaEsteTurno() {
 // Tope de la respuesta. Sin razonar, lo de siempre: 512 como mucho. Razonando,
 // el presupuesto del modelo (o el que pida quien llama): el razonamiento va
 // DENTRO de esa cuenta, y con 512 MiniCPM ni llegaba a emitir la herramienta.
+const CIERRE_PENSAR = '\n</think>\n\n';
+// Fin de frase: un salto de línea, o un punto seguido de espacio y el principio de la siguiente palabra (el espacio
+// viaja con el token siguiente). Un punto pegado no vale: «web.search» no acaba ninguna frase.
+const FIN_FRASE = /\n\s*$|[.!?]["»)\]]?\s+\S{0,20}$/;
 function topeRespuesta(razona) {
   const pedido = muestreoEfectivo()?.maxTokens || 0;
   if (razona) return pedido || MODELS[clave]?.presupuesto || PRESUPUESTO_RAZONANDO;
@@ -1827,6 +1833,8 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   };
   const especStats = { pasos: 0, propuestos: 0, aceptados: 0, msVerifica: 0, msLectura: 0, msMuestreo: 0, msRepaso: 0, repasos: 0 };
 
+  const pensarMax = razona ? Math.max(0, Math.floor(muestreoEfectivo()?.pensar || 0)) : 0;
+  let pensarCerrado = false;
   for (let paso = 0; paso < tope && salida.length < tope; paso++) {
     if (ESPEC && paso > 0 && entrada.length === 1) {
       const borrador = buscaBorrador(ids.concat(salida));
@@ -1911,6 +1919,22 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
     }
 
     if (!emite(id)) break;
+    // Presupuesto de pensar (`setSampling({ pensar: N })`). Sin él, un saludo podía razonar más de mil tokens antes de
+    // la primera palabra, y agotar el tope dejaba la respuesta vacía. Pasados N tokens sin «</think>», se espera al
+    // final de la frase (64 tokens más como mucho), se cierra el razonamiento y el turno sigue con la respuesta.
+    if (pensarMax && !pensarCerrado && salida.length >= pensarMax) {
+      if (texto.includes('</think>')) pensarCerrado = true;
+      else if (FIN_FRASE.test(texto) || salida.length >= pensarMax + 64) {
+        pensarCerrado = true;
+        const cierre = tk.encode(CIERRE_PENSAR);
+        let sigue = true;
+        for (const c of cierre) if (!(sigue = emite(c))) break;
+        if (!sigue) break;
+        console.log(`[engine] razonamiento cerrado por el presupuesto de pensar (${pensarMax} tokens): sigue la respuesta`);
+        entrada = cierre;
+        continue;
+      }
+    }
     entrada = [id];
   }
   { const fin = decS.decode(); if (fin) { onToken(fin); texto += fin; hecho.texto = texto; } }

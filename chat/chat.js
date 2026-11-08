@@ -812,6 +812,15 @@ function paintReading(li, done, total) {
   think.querySelector('summary').textContent = t('reading', n);
 }
 
+// The last finished sentence of the reasoning so far (the one being written may stop mid-word), or ''.
+function thinkingNow(text) {
+  // A sentence ends at a line break or at «. » with a space after it: «web.search» does not end one.
+  const parts = text.trim().split(/(?<=[.!?]["»)\]]?)\s+|\n+/);
+  parts.pop();
+  const last = parts.map((x) => x.trim()).filter((x) => x.length > 8).pop() || '';
+  return last.replace(/[*_`#]/g, '');
+}
+
 // One assistant message: optional reasoning (folded), the answer, and a stamp if it was stopped.
 function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
   let think = li.querySelector('.think');
@@ -824,7 +833,12 @@ function paintBot(li, m, { writing = false, thinkingLive = false } = {}) {
     }
     think.classList.toggle('is-live', thinkingLive);
     think.classList.remove('is-reading');
-    think.querySelector('summary').textContent = thinkingLive ? t('thinking') : t('reasoning');
+    const sum = think.querySelector('summary');
+    sum.textContent = thinkingLive ? t('thinking') : t('reasoning');
+    // While it thinks, the folded line says what about: the last whole sentence of the reasoning. A silent «Thinking…»
+    // for twenty seconds read as a hang.
+    const now = thinkingLive ? thinkingNow(m.thinking) : '';
+    if (now) sum.append(' ', el('span', 'think-now', now));
     think.querySelector('.think-body').textContent = m.thinking.trim();
   } else if (thinkingLive) {
     if (!think) {
@@ -2385,7 +2399,9 @@ async function runTurn(li, mine, ctl, reason) {
         }
         const history = fit.history;
         stepReason = fit.reason;
-        engine.setSampling?.({ razonar: stepReason === false ? false : null });
+        // A thinking budget: the first step has to choose (answer, search, a tool); the later ones already have the
+        // results in front of them. Without it a greeting thought over a thousand tokens before its first word.
+        engine.setSampling?.({ razonar: stepReason === false ? false : null, pensar: step === 0 ? 512 : 256 });
         let queued = false;
         const paint = () => {
           queued = false;
