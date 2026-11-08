@@ -440,7 +440,12 @@ export function createMediaTools(hooks) {
   const module = (m) => { if (!mods.has(m)) { const p = load(m); p.catch(() => mods.delete(m)); mods.set(m, p); } return mods.get(m); };
   let store = null, runtime = null;
   const env = async () => {
-    if (!store) store = (await import(new URL('sdk/core/store-client.js', base).href)).createStoreClient();
+    // The store page at the address of its current version (model-broker.js BROKER_PAGE): an iPhone's Safari kept
+    // answering https://models.elffuss.com/ with a copy of days, without the fix that lets it save large models.
+    if (!store) {
+      const [{ createStoreClient, DEFAULT_STORE_URL }, { BROKER_PAGE }] = await Promise.all([import(new URL('sdk/core/store-client.js', base).href), import('./js/runtime/model-broker.js')]);
+      store = createStoreClient(BROKER_PAGE ? { url: `${DEFAULT_STORE_URL}?v=${BROKER_PAGE}` } : {});
+    }
     if (!runtime) runtime = (await import(new URL('sdk/core/runtimes.js', base).href)).runtimeUrls({ variant: 'webgpu', base: new URL('runtimes/', base).href });
     return { store, runtime };
   };

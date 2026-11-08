@@ -272,17 +272,17 @@
   },
   "claw": {
     "repo": "elffuss-claw",
-    "commit": "8c6fe4370e528c648c8f13a8d3cfa0ee9b48126b",
+    "commit": "e8ac76cef7cfccdbf5fad6805f118e1c636fd605",
     "files": [
       {
         "from": "web/js/runtime/model-store.js",
         "to": "runtime/model-store.js",
-        "sha256": "adf60dbea55b5c6bdefc6b630f1a44bbcb7bec7fc0e490955b7ff7b595f2cde1"
+        "sha256": "319885144fd5a1a8139dd89d4344423f31a3beaf17be3588f191703102f6fd79"
       },
       {
         "from": "web/js/runtime/model-broker.js",
         "to": "runtime/model-broker.js",
-        "sha256": "dfae497bbc6dc356bf47e588ace61fc2224039755855460f4c791028a5f6b441"
+        "sha256": "c1631bd30f65d740d63a26fc973e92f8877f895fafeb7d2c2925b0d751459951"
       },
       {
         "from": "web/js/runtime/opfs-worker.js",
