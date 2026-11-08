@@ -1,12 +1,13 @@
 {
   "schema": "elffuss-home/live@1",
-  "source": "659a688feb173cc0e13b1530c6b456f0bc64dbd7",
-  "engine": "0f36d19658e547068bf285819ef5d92fae79e897",
+  "source": "f46047945519e13cb2c333e3637e551b0ed23e69",
+  "engine": "c84c4ea61d67267290db575ae2aba21f955527d1",
   "claw": "8c6fe4370e528c648c8f13a8d3cfa0ee9b48126b",
   "served": [
     "index.html",
     "chat/",
     "apps/",
+    "coi-sw.js",
     "vendor/"
   ]
 }
