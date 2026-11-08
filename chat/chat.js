@@ -32,6 +32,7 @@ import { needsMediaTools, hasMediaIn, editTarget } from './media-intent.js';
 import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
 import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, recorderPanel, peaksCanvas, startRecording, toMono16k, keepVoiceNote } from './attach.js';
 import { createVoice } from './voice.js';
+import { inputHistory } from './input-history.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -637,6 +638,7 @@ async function paintList() {
   const all = await store.list();
   ui.list.textContent = '';
   ui.empty.hidden = all.length > 0;
+  autoGroups(all.length);
   for (const c of all) {
     const li = document.createElement('li');
     li.className = 'chat-item';
@@ -1657,7 +1659,8 @@ function paintMine() {
     try { apps = (await bridge.call('apps.list')).sort((x, y) => y.created - x.created); } catch { /* down */ }
     try { facts = (await memory.load()) ? await memory.count() : null; } catch { /* down */ }
     listEl.textContent = '';
-    const shown = apps ? apps.slice(0, 6) : [];
+    const shown = apps ? apps.slice(0, 4) : [];
+    $('mine-count').textContent = apps?.length ? String(apps.length) : '';
     for (const a of shown) {
       const li = el('li', 'mine-item');
       if (panel.openName() === a.name) li.setAttribute('aria-current', 'true');
@@ -2744,10 +2747,40 @@ function appListClone() {
   const frag = document.createDocumentFragment();
   const nav = $('apps-nav');
   // Both groups, tools first and then the apps, each with its «all» link; the ids of the headings are not copied.
+  // In the sheet and on the no-WebGPU screen they do not fold: each group is its heading and its list.
   const groups = nav.querySelector('.app-groups').cloneNode(true);
   for (const el of groups.querySelectorAll('[id]')) el.removeAttribute('id');
+  for (const d of groups.querySelectorAll('details.side-group')) {
+    const h = d.querySelector('summary .side-h');
+    d.querySelector('summary').remove();
+    d.replaceWith(...(h ? [h] : []), ...d.childNodes);
+  }
   frag.append(groups);
   return frag;
+}
+
+// The menu's folding groups (Your apps, Tools, Apps), under the chats: each one stays as the visitor left it, in
+// this browser. Until then they are open while there are few chats (the room is there, and a first visit sees the
+// tools) and folded from four chats on, so the chats keep the room.
+const GROUPS_KEY = 'elffuss.side.groups';
+const sideGroups = (() => { try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}') || {}; } catch { return {}; } })();
+for (const d of document.querySelectorAll('.side .side-group')) {
+  const k = d.dataset.group;
+  if (typeof sideGroups[k] === 'boolean') d.open = sideGroups[k]; else d.dataset.auto = '';
+  d.addEventListener('toggle', () => {
+    // The browser may fold two quick changes into one event: what autoGroups() set is told by the state, not by a flag.
+    if ('auto' in d.dataset && d.open === d._autoOpen) return;
+    delete d.dataset.auto;
+    sideGroups[k] = d.open;
+    try { localStorage.setItem(GROUPS_KEY, JSON.stringify(sideGroups)); } catch { /* private mode */ }
+  });
+}
+function autoGroups(chats) {
+  for (const d of document.querySelectorAll('.side .side-group[data-auto]')) {
+    const open = chats < 4;
+    d._autoOpen = open;
+    if (d.open !== open) d.open = open;
+  }
 }
 
 // ---------- Language ----------
@@ -2982,6 +3015,13 @@ function wire() {
   ui.input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ui.form.requestSubmit(); }
   });
+  // ↑ and ↓ go through the messages sent, as in a terminal (input-history.js). A message brought back counts as pasted,
+  // not typed: only what is typed now can ground a memory.
+  const sentHistory = inputHistory(ui.input, {
+    chats: () => store.list(), current: () => chat,
+    skip: () => !!recording || voice?.mode === 'conversation',
+    onSet: () => { pasted = !!ui.input.value; autosize(); },
+  });
   ui.form.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = ui.input.value.trim();
@@ -2993,6 +3033,7 @@ function wire() {
     ui.input.value = '';
     pasted = false;
     autosize();
+    sentHistory.sent(text);
     send(text, { typed, attach });
   });
   ui.stop.addEventListener('click', () => { voice?.stopPressed(); stopTurn(); });
