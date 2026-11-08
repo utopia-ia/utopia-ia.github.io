@@ -272,13 +272,18 @@ export function fotoDeBytes(buf) {
 async function bajaPrefijo(llave) {
   const base = globalThis.__ELFFUSS_PREFIJO_REMOTO;
   if (typeof base !== 'string' || !base) return null;
+  // Con tope de tiempo, cuerpo incluido: la foto es un atajo, y una red que no
+  // contesta no puede dejar el turno esperando. Pasado el tope se lee el prompt.
+  const ctl = new AbortController();
+  const tope = setTimeout(() => ctl.abort(), PREFIJO_REMOTO_MS);
   try {
-    const r = await fetch(base + llave + '.efp');
+    const r = await fetch(base + llave + '.efp', { signal: ctl.signal });
     if (!r.ok) return null;
     const f = fotoDeBytes(await r.arrayBuffer());
     return f && f.llave === llave ? f.d : null;
-  } catch { return null; }
+  } catch { return null; } finally { clearTimeout(tope); }
 }
+const PREFIJO_REMOTO_MS = 8000;
 
 async function cargaPrefijo(fichas) {
   if (!prefijoDiscoActivo() || !sesion) return false;
@@ -1123,6 +1128,23 @@ const avisar = (m = medida) => { for (const cb of oyentes) { try { cb(m); } catc
 export function ultimaMedida() { return medida; }
 
 /**
+ * Tokens of `text` with the loaded model's tokenizer (the real count, not an
+ * estimate). `null` while no model is loaded.
+ * @param {string} text
+ */
+export function countTokens(text) {
+  return tk ? tk.encode(String(text ?? '')).length : null;
+}
+
+/**
+ * El módulo de voz (MOSS-TTS-Nano en la tarjeta, ver moss.js), cargado solo
+ * cuando una app lo pide: el chat no lo descarga si no habla.
+ */
+export const cargaVoz = () => import('./moss.js');
+/** Lo mismo en la CPU (moss-cpu.js), para quien no tiene WebGPU. */
+export const cargaVozCpu = () => import('./moss-cpu.js');
+
+/**
  * Qué modelo está activo, para poder ETIQUETAR las medidas.
  *
  * Sin esto, una captura del velocímetro no se puede diagnosticar: llegó una con
@@ -1260,6 +1282,17 @@ async function pararTodos(causa) {
 // history budget before the history is fitted. Integer, default 0.
 const reservaDe = (x) => (Number.isFinite(x) && x > 0 ? Math.floor(x) : 0);
 
+// `opts.ifFull`: what to do when the prompt does not fit with room for the answer.
+// 'trim' (default): drop the oldest messages and, if still short, let the answer
+// stop where the context ends. 'error': change nothing and throw an error whose
+// `name` is 'ContextFull' (code 'context-full'), with `promptTokens`,
+// `contextTokens` and `answerTokens`, so the caller decides what to drop. With
+// tool turns the oldest message is often the user's question, which 'trim' loses.
+export function contextoLleno(promptTokens, contextTokens, answerTokens) {
+  return Object.assign(new Error(`context full: the prompt takes ${promptTokens} tokens and the answer needs ` +
+    `${answerTokens} of a ${contextTokens}-token context`), { name: 'ContextFull', code: 'context-full', promptTokens, contextTokens, answerTokens });
+}
+
 export async function chat(history, system, onToken = () => {}, opts = {}) {
   const o = opts && typeof opts.aborted === 'boolean' ? { signal: opts } : (opts || {});
   const onPrefill = typeof o.onPrefill === 'function' ? o.onPrefill : null;
@@ -1287,7 +1320,7 @@ export async function chat(history, system, onToken = () => {}, opts = {}) {
         (parado.porDescarga ? ' · por descarga' : ''));
       throw parado;
     }
-    return await turnoParable(history, system, onToken, { senal: ctl.signal, onPrefill, tLlamada, reserva: reservaDe(o.reserveTokens) });
+    return await turnoParable(history, system, onToken, { senal: ctl.signal, onPrefill, tLlamada, reserva: reservaDe(o.reserveTokens), estricto: o.ifFull === 'error' });
   } finally {
     turnosVivos.delete(ctl);
     externa?.removeEventListener?.('abort', reenviar);
@@ -1330,7 +1363,7 @@ async function turnoParable(history, system, onToken, opciones) {
   }
 }
 
-async function turno(history, system, onToken, { senal, onPrefill, tLlamada, reserva = 0 }, hecho) {
+async function turno(history, system, onToken, { senal, onPrefill, tLlamada, reserva = 0, estricto = false }, hecho) {
   // Un turno parado antes de empezar no toca nada: ni el estado ni la foto.
   if (senal.aborted) throw errorParado();
   // Uno que llegó con una descarga en marcha la espera: cuando le toque, el
@@ -1397,7 +1430,7 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   }
   // `reserveTokens` (el bloque de memoria del turno, por ejemplo) se descuenta
   // del presupuesto de la historia ANTES de ajustarla.
-  const mensajes = await ajustaHistorial(history, Math.max(0, ctxLen - sistema - RESERVA - reserva));
+  const mensajes = estricto ? history.slice() : await ajustaHistorial(history, Math.max(0, ctxLen - sistema - RESERVA - reserva));
   if (senal.aborted) throw errorParado();
   // El prompt se arma en DOS PIEZAS. `cabeza` es todo hasta el punto donde se
   // fotografía el estado; `cola` es lo que se alimenta después y queda FUERA de
@@ -1419,6 +1452,9 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   // El gestor del historial cuenta en tokens ESTIMADOS (~4 chars/token) y este
   // tokenizador es el de verdad, así que puede pasarse. Se tiran turnos viejos
   // hasta que quepa, nunca el último: ese es lo que acaba de escribir el usuario.
+  if (estricto && ids.length + reserva + Math.max(RESERVA, topeModo) > ctxLen) {
+    throw contextoLleno(ids.length + reserva, ctxLen, Math.max(RESERVA, topeModo));
+  }
   while (ids.length + RESERVA > ctxLen && mensajes.length > 1) {
     mensajes.shift();
     ({ cabeza, cola } = armar());

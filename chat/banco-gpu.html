@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Banco del motor</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 52rem; margin: 2rem auto; padding: 0 1rem; color: #1d2433; background: #fbfaf7; }
+  button { font: inherit; padding: .55rem 1.1rem; border: 0; border-radius: .4rem; background: #2f5bd3; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  pre { background: #fff; border: 1px solid #ddd; padding: .8rem; white-space: pre-wrap; font: 13px/1.45 ui-monospace, monospace; }
+  .fase { font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Banco del motor</h1>
+<p>Mide el motor de Elffuss en este equipo: la gráfica, LFM3 en la tarjeta y en la CPU, y la voz MOSS. Tarda unos 15 minutos y baja
+unos 2 GB la primera vez. Deja la pestaña delante y no uses el equipo mientras tanto: cualquier otra carga ensucia las medidas.</p>
+<p><button id="go">Empezar</button> <button id="copiar" hidden>Copiar resultados</button></p>
+<p class="fase" id="fase"></p>
+<pre id="out"></pre>
+<script type="module">
+// El motor va en esta misma carpeta: el camino de CPU arranca Workers, y un Worker no puede venir de otro origen.
+const ENGINE = new URL('./js/engine/', location.href).href;   // la copia del motor del chat
+const TTS = 'https://huggingface.co/OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX/resolve/f52645cb/';
+const $ = (id) => document.getElementById(id);
+const out = (s) => { $('out').textContent += s + '\n'; };
+const fase = (s) => { $('fase').textContent = s; };
+const med = (a) => { const v = [...a].sort((x, y) => x - y); return v[v.length >> 1]; };
+
+// Un texto de unos 1.000 tokens para medir la lectura.
+const PARRAFO = 'Los faros guiaron durante siglos a los barcos que se acercaban a la costa de noche. Cada faro tenía su propio ritmo de destellos, de modo que los marineros podían saber dónde estaban solo con mirar la luz. Los fareros vivían junto a la torre, cuidaban la lámpara y anotaban el tiempo en un cuaderno. ';
+const LARGO = Array.from({ length: 14 }, (_, i) => `(${i + 1}) ` + PARRAFO).join('');
+
+async function infoGpu() {
+  const a = await navigator.gpu?.requestAdapter();
+  if (!a) return { sin: true };
+  const i = a.info || {};
+  return {
+    vendor: i.vendor, architecture: i.architecture, description: i.description,
+    subgroupMin: i.subgroupMinSize, subgroupMax: i.subgroupMaxSize,
+    f16: a.features.has('shader-f16'), subgroups: a.features.has('subgroups'),
+    maxBuffer: a.limits.maxBufferSize, maxBinding: a.limits.maxStorageBufferBindingSize,
+    maxInvocations: a.limits.maxComputeInvocationsPerWorkgroup, nucleos: navigator.hardwareConcurrency,
+  };
+}
+
+async function lfm3(cpu) {
+  const e = await import(ENGINE + 'provider.js');
+  const M = await import(ENGINE + 'model.js');
+  const consola = [];
+  const info = console.info;
+  console.info = (...a) => { consola.push(a.join(' ')); info(...a); };
+  globalThis.__ELFFUSS_CPU = !!cpu;
+  e.configure('lfm3-1.7b-q4');
+  await e.load((s) => fase(`LFM3 Q4 ${cpu ? 'CPU' : 'tarjeta'}: ${String(s).slice(0, 80)}`));
+  console.info = info;
+  e.setSampling({ temperature: 0, seed: 7, maxTokens: cpu ? 48 : 128, razonar: false });
+  const Q = [{ role: 'user', content: 'Resume este texto en un párrafo largo:\n\n' + LARGO }];
+  const corre = async () => { e.__olvidaPrefijo(); let t = ''; await e.chat(Q, 'Eres útil.', (p) => { t += p; }); const m = e.ultimaMedida(); return { lee: m.prefillTokS, esc: m.genTokS, t, n: m.promptTokens }; };
+  const ruta = consola.filter((l) => /interruptores|subgrup|tesela|CPU|hilo/i.test(l)).slice(0, 3).join(' | ');
+  return { e, M, corre, ruta };
+}
+
+async function bancoTarjeta() {
+  const { e, M, corre, ruta } = await lfm3(false);
+  out(`ruta: ${ruta || '(sin mensajes)'}`);
+  const ref = await corre(); await corre();
+  out(`prompt ${ref.n} tokens`);
+  // El lote por defecto, como lo elige el motor: 512 con subgrupos de tamaño fijo y sin agente de móvil, 128 si no.
+  const a = await navigator.gpu.requestAdapter();
+  const fijo = a.features.has('subgroups') && a.info?.subgroupMinSize && a.info.subgroupMinSize === a.info.subgroupMaxSize;
+  const movil = navigator.userAgentData?.mobile === true || /Mobi/i.test(navigator.userAgent);
+  const loteBase = fijo && !movil ? 512 : 128;
+  out(`lote por defecto: ${loteBase}`);
+  const LISTA = [
+    ['defecto', {}],
+    ['lote 128', { _lote: 128 }],
+    ['lote 256', { _lote: 256 }],
+    ['lote 512', { _lote: 512 }],
+    ['lote 1024', { _lote: 1024 }],
+    ['sin tesela (GEMM2_TESELA no)', { __ELFFUSS_GEMM2_TESELA: false }],
+    ['lote 512 y sin tesela', { _lote: 512, __ELFFUSS_GEMM2_TESELA: false }],
+    ['GEMV R2·S4', { __ELFFUSS_GEMV2_FORMA: { R: 2, NSG: 4 } }],
+    ['GEMV R4·S2', { __ELFFUSS_GEMV2_FORMA: { R: 4, NSG: 2 } }],
+    ['GEMV R8·S4', { __ELFFUSS_GEMV2_FORMA: { R: 8, NSG: 4 } }],
+    ['GEMV sin la variante sin subgrupos', { __ELFFUSS_GEMV2_SINSUB: false }],
+    ['FLASH no', { __ELFFUSS_FLASH: false }],
+    ['FUSION no', { __ELFFUSS_FUSION: false }],
+    ['TOPK_GPU no', { __ELFFUSS_TOPK_GPU: false }],
+    ['camino rápido entero no (GEMV2 no)', { __ELFFUSS_GEMV2: false }],
+  ];
+  const pon = (cfg) => { M._setLote(cfg._lote ?? loteBase); for (const k of Object.keys(cfg)) if (k.startsWith('__')) { cfg['$' + k] = globalThis[k]; globalThis[k] = cfg[k]; } };
+  const quita = (cfg) => { M._setLote(loteBase); for (const k of Object.keys(cfg)) if (k.startsWith('__')) { const v = cfg['$' + k]; if (v === undefined) delete globalThis[k]; else globalThis[k] = v; } };
+  const res = new Map();
+  for (let r = 0; r < 3; r++) {
+    for (const [k, cfg] of (r % 2 ? [...LISTA].reverse() : LISTA)) {
+      fase(`LFM3 Q4 tarjeta: ronda ${r + 1} de 3 · ${k}`);
+      const c = { ...cfg }; pon(c);
+      let x; try { x = await corre(); } catch (err) { x = { lee: 0, esc: 0, t: 'ERROR ' + String(err.message).slice(0, 80) }; } finally { quita(c); }
+      (res.get(k) || res.set(k, []).get(k)).push(x);
+    }
+  }
+  const d = res.get('defecto'), L0 = med(d.map((x) => x.lee)), E0 = med(d.map((x) => x.esc));
+  out(`defecto: lee ${L0.toFixed(0)} tok/s · escribe ${E0.toFixed(1)} tok/s`);
+  for (const [k, a] of res) {
+    if (k === 'defecto') continue;
+    const err = a.find((x) => String(x.t).startsWith('ERROR'));
+    const igual = a.every((x) => x.t === ref.t);
+    out(`  ${k.padEnd(36)} lee ×${(med(a.map((x) => x.lee)) / L0).toFixed(2)} · escribe ×${(med(a.map((x) => x.esc)) / E0).toFixed(2)}${err ? ' · ' + err.t : igual ? '' : ' · texto distinto'}`);
+  }
+  await e.unload();
+}
+
+async function bancoCpu() {
+  const { e, corre, ruta } = await lfm3(true);
+  out(`ruta: ${ruta || '(sin mensajes)'}`);
+  await corre();
+  const a = [await corre(), await corre()];
+  out(`CPU: lee ${med(a.map((x) => x.lee)).toFixed(1)} tok/s · escribe ${med(a.map((x) => x.esc)).toFixed(1)} tok/s (prompt ${a[0].n} tokens)`);
+  await e.unload();
+  globalThis.__ELFFUSS_CPU = undefined;
+}
+
+async function bancoVoz() {
+  const { cargaVoz, cargaVozCpu } = await import(ENGINE + 'provider.js');
+  const voz = await cargaVoz();
+  const manifest = await (await fetch(TTS + 'browser_poc_manifest.json')).json();
+  const baja = async (f) => { fase(`voz: bajando ${f}`); const b = new Uint8Array(await (await fetch(TTS + f)).arrayBuffer()); return { size: b.length, slice: async (o, l) => b.slice(o, o + l).buffer }; };
+  const fuente = voz.fuenteOnnx({ 'moss_tts_global_shared.data': await baja('moss_tts_global_shared.data'), 'moss_tts_local_shared.data': await baja('moss_tts_local_shared.data') }, voz.MOSS_ONNX_MAPA);
+  const c = manifest.tts_config, t = manifest.prompt_templates, W = c.n_vq + 1;
+  const vozRef = manifest.builtin_voices.find((v) => v.voice === 'Ava'), ids = manifest.text_samples[0].text_token_ids;
+  const before = [...t.user_prompt_prefix_token_ids, c.audio_start_token_id];
+  const after = [c.audio_end_token_id, ...t.user_prompt_after_reference_token_ids, ...ids, ...t.assistant_prompt_prefix_token_ids, c.audio_start_token_id];
+  const filas = new Int32Array((before.length + vozRef.prompt_audio_codes.length + after.length) * W).fill(c.audio_pad_token_id);
+  let r = 0; for (const id of before) filas[(r++) * W] = id;
+  for (const fr of vozRef.prompt_audio_codes) { filas[r * W] = c.audio_user_slot_token_id; fr.forEach((x, q) => { filas[r * W + 1 + q] = x; }); r++; }
+  for (const id of after) filas[(r++) * W] = id;
+  // Números fijos para que todas las rondas hagan las mismas tramas.
+  const rng = (s) => () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (adapter) {
+    fase('voz: tarjeta');
+    const device = await adapter.requestDevice({ requiredLimits: { maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize, maxBufferSize: adapter.limits.maxBufferSize } });
+    const m = await voz.cargaMoss(fuente, device);
+    const ms = [];
+    for (let i = 0; i < 3; i++) { const t0 = performance.now(); const tr = await voz.generaTramasGPU(m, filas, rng(7), { max: 48, lote: 8 }); ms.push({ t: performance.now() - t0, n: tr.length }); }
+    const x = ms.sort((a, b) => a.t - b.t)[1];
+    out(`voz en tarjeta: ${r} filas + ${x.n} tramas en ${x.t.toFixed(0)} ms · ${(x.n / 12.5 / (x.t / 1000)).toFixed(1)}× tiempo real`);
+    device.destroy();
+  }
+  fase('voz: CPU');
+  const mc = await (await cargaVozCpu()).cargaMossCpu(fuente, { hilos: 1 });
+  const msc = [];
+  for (let i = 0; i < 2; i++) { const t0 = performance.now(); const tr = await mc.genera(filas, rng(7), { max: 24 }); msc.push({ t: performance.now() - t0, n: tr.length }); }
+  const y = msc.sort((a, b) => a.t - b.t)[0];
+  out(`voz en CPU (1 hilo): ${r} filas + ${y.n} tramas en ${y.t.toFixed(0)} ms · ${(y.n / 12.5 / (y.t / 1000)).toFixed(1)}× tiempo real`);
+}
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('out').textContent = '';
+  const t0 = performance.now();
+  try {
+    const g = await infoGpu();
+    out('gráfica: ' + JSON.stringify(g));
+    out(`navegador: ${navigator.userAgentData?.brands?.map((b) => b.brand + ' ' + b.version).join(', ') || navigator.userAgent}`);
+    if (!g.sin) { out('\n== LFM3 Q4 en la tarjeta'); try { await bancoTarjeta(); } catch (err) { out('ERROR tarjeta: ' + (err.stack || err.message).slice(0, 400)); } }
+    out('\n== LFM3 Q4 en la CPU (1 hilo)'); try { await bancoCpu(); } catch (err) { out('ERROR CPU: ' + (err.stack || err.message).slice(0, 400)); }
+    out('\n== Voz MOSS-TTS-Nano'); try { await bancoVoz(); } catch (err) { out('ERROR voz: ' + (err.stack || err.message).slice(0, 400)); }
+  } finally {
+    out(`\nterminado en ${((performance.now() - t0) / 60000).toFixed(1)} min`);
+    fase('Listo. Copia los resultados y pégamelos.');
+    $('copiar').hidden = false; $('go').disabled = false;
+  }
+};
+$('copiar').onclick = async () => { await navigator.clipboard.writeText($('out').textContent); $('copiar').textContent = 'Copiado'; };
+</script>
+</body>
+</html>

@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "ada6c051dd1bd7c63ae6c6549666b3027b59a851",
-    "engineCommit": "2615724d26d0c71d529a2d5d9fb2959ad3e8992d",
+    "commit": "0f36d19658e547068bf285819ef5d92fae79e897",
+    "engineCommit": "7d845edcc6221cb9fca59df0ff23ac6df769ce03",
     "dir": "js",
     "files": [
       {
@@ -21,7 +21,7 @@
       {
         "from": "js/cpu-kernels.js",
         "to": "engine/cpu-kernels.js",
-        "sha256": "8701ea735da4c72a69e9955ac0f9d97db138269eb639c5820c20b51b66b7257d"
+        "sha256": "fdb0cb78d9ab5afb8f9c679ab7e05dc0975e1b30eedeeba9b6f6b3e7c60f571b"
       },
       {
         "from": "js/cpu-proxy.js",
@@ -31,7 +31,7 @@
       {
         "from": "js/cpu-trabajo.js",
         "to": "engine/cpu-trabajo.js",
-        "sha256": "86d61eef0cd533e9f6e81e72c334bbad961512e254bf55a8459fad2f797bf224"
+        "sha256": "41f31389c278ecadede785c70b548ad38b16b61fe1548d2f2046ddaa5f44904a"
       },
       {
         "from": "js/cpu.js",
@@ -96,7 +96,7 @@
       {
         "from": "js/kernels.gemv.wgsl.js",
         "to": "engine/kernels.gemv.wgsl.js",
-        "sha256": "780aaf83b4da977dd4cba1020d9ea4a5172976769c4d9c8e6953a1766ccede10"
+        "sha256": "dc288f587e332d36c99635be562cda88a9d6893c7da4e2ed932d258a8fde1a06"
       },
       {
         "from": "js/kernels.hadamard.wgsl.js",
@@ -179,6 +179,21 @@
         "sha256": "14a0ea46d305e187e1673ef286a9a38d993a17e8f358044386dfeb7fcf2672d5"
       },
       {
+        "from": "js/moss-cpu.js",
+        "to": "engine/moss-cpu.js",
+        "sha256": "b4e176d98821637e6844d1f5b3c84b837df6edbd0e414460cf9581a2eea3db05"
+      },
+      {
+        "from": "js/moss-mapa.js",
+        "to": "engine/moss-mapa.js",
+        "sha256": "91fbe2156d63c443e564bf6f0f69488f3b5adfcaad8dbf9806d5bb76539faafc"
+      },
+      {
+        "from": "js/moss.js",
+        "to": "engine/moss.js",
+        "sha256": "1c1866b57e4278f3b58c22e9853ddafb9d3d3812c95cd40a2461967f3518c20c"
+      },
+      {
         "from": "js/ops.flash.js",
         "to": "engine/ops.flash.js",
         "sha256": "0a2274377a1a7eeb28a0eb8078ea629a7356e7f03856f0f80a5ae2e6fa2bbc52"
@@ -211,7 +226,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "cb7228674a89161737b0b56f766bf5c1169c7a32a537ea1fb42bb8ad0b94700c"
+        "sha256": "a3179e84f89d015fd0413ec09978bf4c81b8a8cfad45ac36997a5552736be442"
       },
       {
         "from": "js/quant-tables.js",

@@ -171,7 +171,10 @@ export function gemv2Forma({ tipo, filas, k, T = 1, nm = 1, maxCompartida = 1638
   const divide = (R) => lista.every((f) => f % R === 0);
   // Sin subgrupos, la suma final de los 32 carriles va por memoria de grupo (`red`): cuenta también.
   const compartida = (R, NSG) => (NSG > 1 ? nm * R * T * GEMV2_PARTES * 32 * 4 : 0) + (sg ? 0 : nm * R * T * 32 * 4);
-  const pedida = globalThis.__ELFFUSS_GEMV2_FORMA;
+  // También puede ser una función de la matriz ({ tipo, filas, k, T, nm }) que
+  // devuelve la forma o null (la de siempre), para barrer una sola matriz.
+  const g = globalThis.__ELFFUSS_GEMV2_FORMA;
+  const pedida = typeof g === 'function' ? g({ tipo, filas: lista, k, T, nm }) : g;
   if (pedida && typeof pedida === 'object') {
     const { R, NSG } = pedida;
     if (![1, 2, 4, 8].includes(R) || ![1, 2, 4].includes(NSG)) {
