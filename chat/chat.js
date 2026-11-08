@@ -22,7 +22,7 @@ import { MODELS, cachea } from './js/engine/registro.js';
 import * as bridge from './bridge.js';
 import * as panel from './panel.js';
 import * as memory from './memory-wire.js';
-import { offerInstall } from './install.js';
+import { offerInstall, installGate } from './install.js';
 import * as web from './web.js';
 import * as appview from './appview.js';
 import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
@@ -96,6 +96,7 @@ const T = {
     index: 'Reading the model index…',
     ready: 'Model ready',
     stCached: 'In this browser · 0 bytes to download',
+    bootFailed: (why) => `The chat could not finish starting (${why}). Reload the page to try again.`,
     stMissing: (size) => `${size} to download, once`,
     stReady: 'Ready on this device',
     stLoading: 'Loading…',
@@ -274,6 +275,7 @@ const T = {
     index: 'Leyendo el índice del modelo…',
     ready: 'Modelo listo',
     stCached: 'En este navegador · 0 bytes que descargar',
+    bootFailed: (why) => `El chat no ha terminado de arrancar (${why}). Recarga la página para intentarlo otra vez.`,
     stMissing: (size) => `${size} que descargar, una vez`,
     stReady: 'Listo en este dispositivo',
     stLoading: 'Cargando…',
@@ -485,6 +487,21 @@ globalThis.__ELFFUSS_PREFIJO_REMOTO = 'https://huggingface.co/UtopiaIA/elffuss-p
 const model = () => (device.id ? MODELS[device.id] : null);
 const modelUrl = () => { const m = model(); return m && !Array.isArray(m.url) ? m.url : null; };
 
+// Every wait of the start has a limit. A frame or a browser call that never answers (an iPhone's Safari left a tab with
+// no model chip and no voice control) must not stop the page: on a timeout the start goes on with a fallback and says
+// so in the console. `job` is a promise or a function that returns one (a throw counts as a failure).
+function within(job, ms, fallback, what) {
+  return new Promise((resolve) => {
+    let over = false;
+    const fall = (why) => { if (over) return; over = true; clearTimeout(timer); console.warn(`[chat] ${what}: ${why}; going on without it`); resolve(typeof fallback === 'function' ? fallback() : fallback); };
+    const timer = setTimeout(() => fall(`no answer in ${ms} ms`), ms);
+    let p;
+    try { p = Promise.resolve(typeof job === 'function' ? job() : job); } catch (e) { fall(e?.message || String(e)); return; }
+    p.then((v) => { if (over) return; over = true; clearTimeout(timer); resolve(v); }, (e) => fall(e?.message || String(e)));
+  });
+}
+const BOOT_MS = { chat: 5000, adapter: 8000, device: 10000, sw: 4000, isolate: 8000, shared: 6000, opfs: 3000, cached: 10000 };
+
 // ---------- Device ----------
 // Without a usable WebGPU the engine runs the QAD-Q4_0 on the processor (WebAssembly SIMD, in a Worker): slower than
 // the graphics card, but it answers instead of showing «this browser cannot». The probe is the smallest module that
@@ -503,7 +520,7 @@ async function pickDevice() {
 async function pickGpu() {
   if (!navigator.gpu) return { ok: false, why: 'whyNoWebgpu' };
   let a = null;
-  try { a = await navigator.gpu.requestAdapter(); } catch { /* none */ }
+  a = await within(() => navigator.gpu.requestAdapter(), BOOT_MS.adapter, null, 'the graphics card (requestAdapter)');
   if (!a) return { ok: false, why: 'whyNoAdapter' };
   if (a.info?.isFallbackAdapter || a.isFallbackAdapter) return { ok: false, why: 'whyFallback' };
   if (!a.features?.has('shader-f16')) return { ok: false, why: 'whyNoF16' };
@@ -530,14 +547,14 @@ async function isolateForCpu() {
   if (!ISOLATE_CPU && device.cpu) return false;
   if (!device.cpu) {
     // A device that now has a usable WebGPU leaves the isolation behind (it takes effect on the next load).
-    try { for (const r of await sw.getRegistrations()) if (/\/coi-sw\.js$/.test(r.active?.scriptURL || '')) r.unregister(); } catch { /* — */ }
+    try { for (const r of await within(() => sw.getRegistrations(), BOOT_MS.sw, [], 'the service workers')) if (/\/coi-sw\.js$/.test(r.active?.scriptURL || '')) r.unregister(); } catch { /* — */ }
     return false;
   }
   if (self.crossOriginIsolated) return false;
   try { if (sessionStorage.getItem(COI_TRIED)) return false; sessionStorage.setItem(COI_TRIED, '1'); } catch { return false; }
   try {
     await sw.register(new URL('../coi-sw.js', import.meta.url), { scope: new URL('../', import.meta.url).pathname });
-    await sw.ready;
+    if (!(await within(sw.ready.then(() => true), BOOT_MS.sw, false, 'the isolating service worker'))) return false;
     location.reload();
     return true;
   } catch (e) {
@@ -556,13 +573,13 @@ async function isCached() {
   if (!m || !url || !cachea(m)) return false;
   if (!mirror && !self.crossOriginIsolated) try {
     const { isSharedCached } = await import('./js/runtime/model-broker.js');
-    if (await isSharedCached(url)) return true;
+    if (await within(() => isSharedCached(url), BOOT_MS.shared, false, 'the shared model store')) return true;
   } catch { /* the shared store is not reachable */ }
-  try {
+  return within(async () => {
     const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('elffuss-models');
     await dir.getFileHandle(keyFor(url) + '.done');
     return true;
-  } catch { return false; }
+  }, BOOT_MS.opfs, false, 'this site\'s model store');
 }
 
 let wasCached = false;               // what the store said before this load started
@@ -1341,8 +1358,10 @@ const media = createMediaTools({
   // The download question in the message that asked; a retry from a card has already said yes. Never a silent «no»:
   // with no step to show it in, it goes under the newest answer (it used to answer false, and the card then said
   // «nothing was downloaded» without anyone being asked).
-  consent: (q) => {
-    if (preApproved) { preApproved = false; return Promise.resolve(true); }
+  // On an iPhone or iPad tab the install screen comes first (install.js installGate): «I will install it» downloads nothing.
+  consent: async (q) => {
+    if (!(await installGate())) { preApproved = false; return false; }
+    if (preApproved) { preApproved = false; return true; }
     if (mediaUi) return untilStopped(mediaGate(mediaUi.li, q, mediaUi.signal), mediaUi.signal);
     const li = [...ui.thread.querySelectorAll('.msg-bot')].pop();
     return li ? mediaGate(li, q, null) : Promise.resolve(false);
@@ -1735,7 +1754,15 @@ function gate(li, signal) {
       btn.type = 'button'; btn.className = 'btn'; btn.dataset.download = '';
       btn.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-down"/></svg>';
       btn.append(document.createTextNode(t('gateBtn', gb(m.bytes))));
-      btn.addEventListener('click', () => { repaints.delete(paint); box.remove(); resolve(); }, { once: true });
+      // On an iPhone or iPad tab the install screen first; «I will install it» leaves the card as it is.
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        const go = await installGate();
+        btn.disabled = false;
+        if (!go || !box.isConnected) return;
+        repaints.delete(paint); box.remove(); resolve();
+      });
       box.append(h, p, size, btn);
       box.setAttribute('aria-label', t('gateTitle'));
     };
@@ -3028,16 +3055,35 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) paintMine(); });
   let last = null;
   try { last = localStorage.getItem(CURRENT); } catch { /* — */ }
-  if (last) await openChat(last); else paintList();
+  if (last) await within(() => openChat(last), BOOT_MS.chat, null, 'opening the last chat'); else paintList();
 
-  Object.assign(device, await pickDevice());
-  markDetected();
-  if (!device.ok) { showNoGpu(device.why); return; }
-  if (await isolateForCpu()) return;              // the page reloads isolated
-  setModelState('checking');
-  setModelState((await isCached()) ? 'cached' : 'missing');
-  markChecked();
-  startVoice();
+  try {
+    Object.assign(device, await within(pickDevice, BOOT_MS.device, () => (cpuCan() && MODELS['lfm3-1.7b-q4']
+      ? { ok: true, id: 'lfm3-1.7b-q4', cpu: true, why: '' } : { ok: false, why: 'whyNoAdapter' }), 'choosing the device'));
+    markDetected();
+    if (!device.ok) { showNoGpu(device.why); return; }
+    if (await within(isolateForCpu, BOOT_MS.isolate, false, 'isolating the page')) return;   // the page reloads isolated
+    setModelState('checking');
+    // Not known in time: «missing» (the load still finds a stored model and does not download it), corrected when the
+    // store answers.
+    const asking = isCached();
+    const cached = await within(asking, BOOT_MS.cached, null, 'asking whether the model is stored');
+    setModelState(cached ? 'cached' : 'missing');
+    if (cached === null) asking.then((c) => { if (c && modelState === 'missing') setModelState('cached'); }, () => {});
+  } finally {
+    // Whatever happened above, a turn never waits forever for the start, and the voice control appears.
+    markDetected(); markChecked();
+    if (device.ok) startVoice();
+  }
+}
+
+// The start failed outright: said in the page, not only in the console.
+function showBootError(e) {
+  console.error('[chat] boot failed', e);
+  try {
+    ui.fine.hidden = false;
+    ui.fine.textContent = t('bootFailed', String(e?.message || e).slice(0, 160));
+  } catch { /* the page itself is not there */ }
 }
 
 // The voice mode: its control in the top bar, the reading aloud and the conversation screen (voice.js). What it hears
@@ -3051,9 +3097,10 @@ function startVoice() {
       stopTurn, turnRunning: () => !!turn, unloadLlm,
       chatModel: () => ({ missing: modelState === 'missing', bytes: model()?.bytes || 0 }),
       approveChatModel: () => { voiceGateOk = true; },
+      beforeDownload: installGate,
       chip: $('voice-btn'), stage: document.querySelector('.stage'), input: ui.input,
     });
   } catch (e) { console.warn('[chat] voice mode did not start', e); }
 }
 
-boot().catch((e) => console.error('[chat] boot failed', e));
+boot().catch(showBootError);

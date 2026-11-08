@@ -597,6 +597,22 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 .install-row .mini-btn { margin-left: auto; }
 .install-how { flex: 1 1 12rem; margin: 0; font-size: var(--ef-text-sm); font-weight: var(--ef-weight-strong); }
 @keyframes install-in { from { opacity: 0; transform: translateY(-8px); } }
+/* Before a big download on an iPhone or iPad tab (install.js installGate): the same plate, as a modal. */
+.install-gate {
+  width: min(440px, calc(100vw - 32px)); padding: var(--ef-s5) var(--ef-s5) var(--ef-s4);
+  border: 1px solid var(--ef-steel); border-radius: var(--ef-r3); background: var(--ef-wall); color: var(--ef-ink); box-shadow: var(--ef-shadow-2);
+}
+.install-gate::backdrop { background: rgba(14, 16, 28, 0.6); }
+.install-gate h2 { margin: 0 0 var(--ef-s2); font-weight: 760; font-stretch: var(--ef-stretch-display); font-size: var(--ef-text-md); }
+.install-gate .ig-why { margin: 0 0 var(--ef-s3); color: var(--ef-graphite); font-size: var(--ef-text-sm); }
+.install-gate .ig-steps { margin: 0 0 var(--ef-s4); padding-left: 1.4em; font-weight: var(--ef-weight-strong); }
+.install-gate .ig-steps li + li { margin-top: var(--ef-s1); }
+.ig-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--ef-s2); }
+.ig-actions .btn { min-height: var(--ef-hit, 44px); }
+@media (max-width: 600px) {
+  .ig-actions { flex-direction: column-reverse; align-items: stretch; }
+  .ig-actions .btn, .ig-actions .mini-btn { width: 100%; min-height: var(--ef-hit, 44px); }
+}
 @media (max-width: 520px) {
   .install { padding: var(--ef-s3) var(--ef-s3) var(--ef-s2); }
   .install-title { font-size: var(--ef-text-base); }

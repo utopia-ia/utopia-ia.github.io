@@ -58,7 +58,8 @@
 <link rel="stylesheet" href="/chat/chat.css">
 <link rel="stylesheet" href="/chat/slate.css">
 <link rel="stylesheet" href="/chat/voice.css">
-<link rel="modulepreload" href="/chat/chat.js">
+<!-- No modulepreload of chat.js: Safari served a preloaded copy from its memory cache without asking the server, and a
+     two-day-old chat.js ran under a new page. The publish adds ?v=<commit> to the script below (ops/stamp-entry.py). -->
 </head>
 <body>
 <a class="skip" href="#composer-input"><span data-l="en">Skip to the message box</span><span data-l="es" lang="es">Saltar al cuadro de mensaje</span></a>
@@ -252,6 +253,6 @@
   <div id="mem-sheet-body"></div>
 </dialog>
 
-<script type="module" src="/chat/chat.js"></script>
+<script type="module" src="/chat/chat.js?v=edb7ecd45358"></script>
 </body>
 </html>

@@ -47,7 +47,7 @@ const WORDS = {
       review: '¿Lo envío?', thinking: 'Pensando…', speaking: 'Elffuss responde', paused: 'En pausa', error: 'No ha podido empezar',
     },
     hints: {
-      listening: 'Habla cuando quieras', hearing: 'Toca para terminar', thinking: 'Toca para interrumpir', speaking: 'Habla o toca para interrumpir',
+      listening: 'Habla cuando quieras', hearing: 'Toca para terminar', thinking: 'Toca para interrumpir', speaking: '',
       paused: 'Toca el círculo para seguir', loading: '', transcribing: '', review: '', error: 'Toca el círculo para reintentar',
     },
     orbLabel: { listening: 'Pausar la escucha', hearing: 'Terminar la frase', thinking: 'Interrumpir', speaking: 'Interrumpir', paused: 'Seguir escuchando', error: 'Reintentar', loading: 'Preparando', transcribing: 'Escribiendo', review: 'Esperando' },
@@ -83,7 +83,7 @@ const WORDS = {
       review: 'Send it?', thinking: 'Thinking…', speaking: 'Elffuss is answering', paused: 'Paused', error: 'Could not start',
     },
     hints: {
-      listening: 'Talk whenever you like', hearing: 'Tap to finish', thinking: 'Tap to interrupt', speaking: 'Talk or tap to interrupt',
+      listening: 'Talk whenever you like', hearing: 'Tap to finish', thinking: 'Tap to interrupt', speaking: '',
       paused: 'Tap the circle to go on', loading: '', transcribing: '', review: '', error: 'Tap the circle to try again',
     },
     orbLabel: { listening: 'Pause listening', hearing: 'Finish the sentence', thinking: 'Interrupt', speaking: 'Interrupt', paused: 'Listen again', error: 'Try again', loading: 'Getting ready', transcribing: 'Writing', review: 'Waiting' },
@@ -123,6 +123,7 @@ function loadSettings() {
  *   lang: () => 'es'|'en', live?: (fn: () => void) => void,
  *   send: (text: string) => void, stopTurn: () => Promise<void>, turnRunning: () => boolean,
  *   unloadLlm: () => Promise<void>, chatModel: () => ({ missing: boolean, bytes: number }), approveChatModel: () => void,
+ *   beforeDownload?: () => Promise<boolean>,
  *   chip: HTMLElement, stage: HTMLElement, input?: HTMLElement }} hooks
  */
 export function createVoice(hooks) {
@@ -134,6 +135,10 @@ export function createVoice(hooks) {
   const policy = coarse() ? 'turns' : 'together';
   let state = { ...initialState };
   const debug = (globalThis.__voice = { state, events: [], times: [], spoken: [], partials: [], policy });
+  // Why the voice did not load, in the words of the part that failed (the store, Whisper…): shown under «did not load»
+  // so the reason can be read on the phone, not only in a console nobody sees there.
+  let lastError = '';
+  const noteError = (err) => { lastError = String(err?.message || err || '').replace(/\s+/g, ' ').trim().slice(0, 180); debug.lastError = lastError; };
   const log = (ev) => { debug.events.push(ev); debug.times.push(Math.round(performance.now())); if (debug.events.length > 300) { debug.events.shift(); debug.times.shift(); } };
 
   // ---------- Models ----------
@@ -487,7 +492,7 @@ export function createVoice(hooks) {
       if (!speakingModes()) return;
       if (tts.items.length) await hooks.unloadLlm().catch(() => {});
       if (state.mode === 'conversation') {
-        try { await loadAsr(); if (!['paused', 'error', 'off'].includes(state.phase)) await openMic(); } catch (err) { dispatch({ type: 'FAILED', error: err?.code || 'failed' }); }
+        try { await loadAsr(); if (!['paused', 'error', 'off'].includes(state.phase)) await openMic(); } catch (err) { console.warn('[voice] after the turn', err); noteError(err); dispatch({ type: 'FAILED', error: err?.code || 'failed' }); }
       }
       pump();
     }
@@ -503,6 +508,8 @@ export function createVoice(hooks) {
         const need = await missing(mode);
         if (need.error) throw Object.assign(new Error(need.error), { code: need.error });
         if (!settings.seen || need.voice > 0 || (mode === 'conversation' && need.chat > 0)) {
+          // Something to download: first the product's own question (on an iPhone tab, install the app first).
+          if ((need.voice > 0 || (mode === 'conversation' && need.chat > 0)) && hooks.beforeDownload && !(await hooks.beforeDownload())) { setMode('text'); return; }
           const yes = await consent(mode, need);
           if (!yes) { setMode('text'); return; }
           settings.seen = true; keep();
@@ -523,6 +530,7 @@ export function createVoice(hooks) {
         dispatch({ type: 'READY' });
       } catch (err) {
         console.warn('[voice] prepare', err);
+        noteError(err);
         if (state.mode === mode) dispatch({ type: 'FAILED', error: err?.code || 'failed' });
       }
     })().finally(() => { preparing = null; });
@@ -780,7 +788,8 @@ export function createVoice(hooks) {
     q('.vs-hint').textContent = ph === 'error' ? (W.errors[state.error] || W.errors.failed) : W.hints[ph] || '';
     q('.vs-orb-btn').setAttribute('aria-label', W.orbLabel[ph] || W.phases[ph] || '');
     q('.vs-orb-btn').disabled = ph === 'loading' || ph === 'transcribing' || ph === 'review';
-    const heardLine = ph === 'hearing' ? partial : ['transcribing', 'review', 'thinking', 'speaking'].includes(ph) ? heard : '';
+    const heardLine = ph === 'hearing' ? partial : ['transcribing', 'review', 'thinking', 'speaking'].includes(ph) ? heard
+      : ph === 'error' && !(state.error in W.errors && state.error !== 'failed') ? lastError : '';
     q('.vs-heard').textContent = heardLine;
     q('.vs-heard').classList.toggle('is-partial', ph === 'hearing');
     q('.vs-caption').textContent = ph === 'speaking' ? caption : '';
