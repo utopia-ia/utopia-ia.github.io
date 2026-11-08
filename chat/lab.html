@@ -166,8 +166,46 @@ async function ancho(t) {
   return `lectura de ${MB} MB en la gráfica:\n` + filas.join('\n');
 }
 
+// Cálculo puro en la gráfica: cuánto da de verdad, y si alguna función de desempaquetar (las que usan los kernels del
+// motor) se arrastra en esta tarjeta. Mismo trabajo por hilo en las tres; solo cambia de dónde salen los números.
+async function alu(t) {
+  if (prov) { await prov.unload(); prov = null; }
+  const a = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+  const dev = await a.requestDevice();
+  const N = t.iter || 2048, G = t.grupos || 4096, WG = 256;
+  const cuerpos = {
+    fma: 'let v = vec4<f32>(f32(i) * 1e-6, 0.5, 0.25, 0.125);',
+    i8: 'let v = vec4<f32>(unpack4xI8(i * 2654435761u + s));',
+    f16: 'let v = vec4<f32>(unpack2x16float(i * 2654435761u + s), unpack2x16float(i ^ s));',
+  };
+  const out = dev.createBuffer({ size: G * WG * 16, usage: GPUBufferUsage.STORAGE });
+  const filas = [];
+  for (const [nombre, cuerpo] of Object.entries(cuerpos)) {
+    const code = `@group(0) @binding(0) var<storage, read_write> o : array<vec4<f32>>;
+@compute @workgroup_size(${WG}) fn main(@builtin(global_invocation_id) g : vec3<u32>) {
+  let s = g.x;
+  var a0 = vec4<f32>(0.0); var a1 = vec4<f32>(0.1); var a2 = vec4<f32>(0.2); var a3 = vec4<f32>(0.3);
+  for (var i = 0u; i < ${N}u; i = i + 1u) {
+    ${cuerpo}
+    a0 = fma(a0, v, v); a1 = fma(a1, v, a0); a2 = fma(a2, v, a1); a3 = fma(a3, v, a2);
+  }
+  o[g.x] = a0 + a1 + a2 + a3;
+}`;
+    const pipe = dev.createComputePipeline({ layout: 'auto', compute: { module: dev.createShaderModule({ code }), entryPoint: 'main' } });
+    const bg = dev.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: out } }] });
+    const corre = async () => { const e = dev.createCommandEncoder(); const p = e.beginComputePass(); p.setPipeline(pipe); p.setBindGroup(0, bg); p.dispatchWorkgroups(G); p.end(); dev.queue.submit([e.finish()]); await dev.queue.onSubmittedWorkDone(); };
+    await corre();
+    const ts = []; for (let r = 0; r < 5; r++) { const t0 = performance.now(); await corre(); ts.push(performance.now() - t0); }
+    const flops = G * WG * N * 4 * 4 * 2;   // 4 fma de vec4 por vuelta = 32 operaciones
+    filas.push(`  ${nombre}: ${(flops / (med(ts) / 1000) / 1e9).toFixed(0)} GFLOPS (${med(ts).toFixed(1)} ms)`);
+  }
+  out.destroy(); dev.destroy();
+  return `cálculo en la gráfica (${a.info?.vendor || '?'} ${a.info?.architecture || ''}):\n` + filas.join('\n');
+}
+
 async function ejecuta(t) {
   if (t.tipo === 'ancho') return await ancho(t);
+  if (t.tipo === 'alu') return await alu(t);
   if (t.tipo === 'info') return await info();
   if (t.tipo === 'lfm3') return await lfm3(t);
   if (t.tipo === 'perfil') return await perfil(t);
