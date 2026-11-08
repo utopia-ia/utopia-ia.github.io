@@ -28,9 +28,9 @@ import * as appview from './appview.js';
 import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
 import { parseToolCall, writingTool, systemPrompt, contextBlock, withContext, CONTEXT_LABEL } from './tools.js';
 import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes, describedLine } from './media-tools.js';
-import { needsMediaTools, hasMediaIn } from './media-intent.js';
+import { needsMediaTools, hasMediaIn, editTarget } from './media-intent.js';
 import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
-import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, startRecording, toMono16k, keepVoiceNote } from './attach.js';
+import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, recorderPanel, peaksCanvas, startRecording, toMono16k, keepVoiceNote } from './attach.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -203,6 +203,7 @@ const T = {
     mediaNeedBtn: (verb) => `Download and ${verb}`,
     mediaVerb: { 'image.generate': 'make the picture', 'video.animate': 'animate it', 'video.generate': 'make the video', 'audio.music': 'make the music', 'audio.sfx': 'make the sound', 'audio.speak': 'read it aloud', 'image.describe': 'look at it' },
     mediaLooked: 'Looked at',
+    madeFrom: 'Made from',
     looking: 'Looking at the picture…',
     unseen: (id, r) => `[${id}] (the picture could not be looked at${r ? `: ${r}` : ''}; if asked what it shows, say so and do not guess)`,
     onlyAttach: '(The user only sent this picture, with no text. Say in one or two sentences, in their language, what it shows. Do not call any tool.)',
@@ -370,6 +371,7 @@ const T = {
     mediaNeedBtn: (verb) => `Descargar y ${verb}`,
     mediaVerb: { 'image.generate': 'hacer la imagen', 'video.animate': 'animarla', 'video.generate': 'hacer el vídeo', 'audio.music': 'hacer la música', 'audio.sfx': 'hacer el sonido', 'audio.speak': 'leerlo en voz alta', 'image.describe': 'mirarla' },
     mediaLooked: 'Vista',
+    madeFrom: 'Hecha desde',
     looking: 'Mirando la imagen…',
     unseen: (id, r) => `[${id}] (no se pudo describir la imagen${r ? `: ${r}` : ''}; si te preguntan qué muestra, dilo así y no lo inventes)`,
     onlyAttach: '(El usuario solo ha enviado esta imagen, sin texto. Di en una o dos frases, en su idioma, lo que se ve en ella. No llames a ninguna herramienta.)',
@@ -735,6 +737,7 @@ function attachmentCard(a) {
   }
   const holder = mediaElement(a.kind, a.id, a.name);
   if (a.source === 'voice') card.append(el('span', 'att-line', t('voiceNote') + (a.meta?.seconds ? ` · ${clockOf(a.meta.seconds)}` : '')));
+  if (a.source === 'voice' && a.meta?.peaks?.length) card.append(peaksCanvas(a.meta.peaks));
   card.append(holder, el('span', 'att-id', a.id));
   return card;
 }
@@ -1157,6 +1160,8 @@ function callSummary(call) {
     if (a.prompt != null) s.prompt = String(a.prompt).slice(0, 300);
     if (a.text != null) s.text = String(a.text).slice(0, 300);
     if (a.image != null) s.image = String(a.image).slice(0, 40);
+    for (const k of ['start', 'end']) if (a[k] != null) s[k] = String(a[k]).slice(0, 40);
+    for (const k of ['seconds', 'strength']) if (Number.isFinite(Number(a[k])) && a[k] !== '' && a[k] != null) s[k] = Number(a[k]);
   }
   return s;
 }
@@ -1399,6 +1404,26 @@ function paintMediaProgress(li, p) {
   const line = card.querySelector('.tc-progress');
   const meter = card.querySelector('.meter');
   if (line) line.textContent = p.text;
+  // A story video: its keyframes appear as they are made, small, in order; the shots that follow light them up.
+  const st = p.story;
+  if (st && (st.stage === 'keyframe' || st.stage === 'clip')) {
+    let strip = card.querySelector('.tc-story');
+    if (!strip) { strip = el('div', 'tc-story'); strip.setAttribute('aria-hidden', 'true'); (meter || line || card).after(strip); }
+    if (st.stage === 'keyframe' && st.done && st.image?.rgba && !strip.querySelector(`[data-k="${st.index}"]`)) {
+      const c = document.createElement('canvas');
+      c.dataset.k = String(st.index);
+      const w = 96, h = Math.max(1, Math.round((96 * st.image.height) / st.image.width));
+      c.width = w; c.height = h;
+      try {
+        const src = new ImageData(new Uint8ClampedArray(st.image.rgba), st.image.width, st.image.height);
+        createImageBitmap(src).then((bm) => { c.getContext('2d').drawImage(bm, 0, 0, w, h); bm.close?.(); }).catch(() => {});
+      } catch { /* a picture this browser cannot draw: the strip goes on without it */ }
+      const kids = [...strip.children];
+      const after = kids.find((x) => Number(x.dataset.k) > st.index);
+      strip.insertBefore(c, after || null);
+    }
+    if (st.stage === 'clip') for (const k of strip.children) k.classList.toggle('is-shot', Number(k.dataset.k) <= st.index + (st.done ? 1 : 0));
+  }
   if (meter) {
     meter.classList.toggle('is-busy', p.pct == null);
     meter.querySelector('i').style.width = (p.pct ?? 0) + '%';
@@ -1431,6 +1456,16 @@ function paintMediaCard(li, card, body, m, r, c) {
   }
   if (r.media) {
     body.append(el('span', 'tc-kicker', `${t('mediaKind')[r.media.kind] || ''} · ${r.media.id}`));
+    // Made from another picture: which one, small.
+    const from = c.tool === 'image.generate' ? (c.image || r.image) : c.tool === 'video.generate' ? (c.start || c.end) : null;
+    if (from) {
+      const f = el('span', 'tc-from');
+      f.append(document.createTextNode(t('madeFrom') + ' '));
+      const im = mediaElement('image', from, from);
+      im.classList.add('tc-from-img');
+      f.append(im, document.createTextNode(' ' + from));
+      body.append(f);
+    }
     if (what) body.append(el('b', 'tc-title', what));
     body.append(el('span', 'tc-line', t('mediaHere')));
     card.append(body);
@@ -1481,7 +1516,7 @@ function paintMediaCard(li, card, body, m, r, c) {
 async function retryMedia(li, m) {
   if (turn || !m?.call) return;
   const mine = chat;
-  const args = { ...(m.call.prompt ? { prompt: m.call.prompt } : {}), ...(m.call.text ? { text: m.call.text } : {}), ...(m.call.image ? { image: m.call.image } : {}) };
+  const args = Object.fromEntries(['prompt', 'text', 'image', 'start', 'end', 'seconds', 'strength'].filter((k) => m.call[k] != null).map((k) => [k, m.call[k]]));
   const ctl = new AbortController();
   turn = { ctl, chatId: mine?.id };
   setBusy(true);
@@ -2011,6 +2046,16 @@ function addressToRead(text) {
   return { tool: 'web.fetch', args: { url }, forced: true };
 }
 
+// The pictures of a conversation, oldest first: the ones attached and the ones made.
+function pictureIds(c) {
+  const ids = [];
+  for (const m of c?.messages || []) {
+    for (const a of m.attach || []) if (a.kind === 'image' && a.id) ids.push(a.id);
+    if (m.result?.media?.kind === 'image' && m.result.media.id) ids.push(m.result.media.id);
+  }
+  return ids;
+}
+
 // The pictures attached to a message, looked at once (media-tools.js describe(): Florence-2 in this browser). What
 // they show goes into the message's context for the model, in the same words on every later turn; a picture that
 // could not be looked at says so, and why, so the model says it rather than «I only have its id».
@@ -2067,10 +2112,14 @@ async function runTurn(li, mine, ctl, reason) {
   // Only a picture, no words: the chat says what it sees and offers what to do with it (chips); no tool runs. Kiko,
   // on elffuss.com: a photo sent alone made the model animate it, and the card said it had failed.
   const onlyAttach = !String(lastUser?.content || '').trim() && (lastUser?.attach || []).length > 0 && lastUser.attach.every((a) => a.kind === 'image');
-  const mediaTurn = !onlyAttach && !mirror && needsMediaTools(lastUser?.content || '', {
+  // An edit of a picture the conversation has («hazla en acuarela», «ponla de noche», «cámbiale el fondo»…): which one,
+  // decided here (media-intent.js editTarget). The edit then really starts from it, even when the model leaves the
+  // picture out of its call (Kiko: «parece que es más por el prompt que porque usa la imagen anterior»).
+  const editImage = !onlyAttach && !mirror ? editTarget(lastUser?.content || '', pictureIds(mine)) : null;
+  const mediaTurn = !onlyAttach && !mirror && (!!editImage || needsMediaTools(lastUser?.content || '', {
     attachments: lastUser?.attach?.length || 0,
     hasMedia: hasMediaIn(mine.messages.map((m) => `${m.context || ''}\n${m.content || ''}`).join('\n')),
-  }).media;
+  }).media);
   // The app tools likewise (app-intent.js): asked for an app, an app open in the panel and a change or fix for it, or
   // a saved app named. Decided on the first step, when the list of saved apps is at hand.
   let appTurn = onlyAttach ? false : null;
@@ -2198,6 +2247,10 @@ async function runTurn(li, mine, ctl, reason) {
           break;
         }
       }
+      // On an edit turn the picture is the one the user means (named, else the newest): a model that leaves it out, or
+      // passes an older one the user did not name (measured: «ahora de noche» after the watercolour went back to the
+      // first fox), gets it put in, so edits chain.
+      if (editImage && call.tool === 'image.generate' && call.args?.image !== editImage && !String(lastUser?.content || '').toLowerCase().includes(String(call.args?.image || '#').toLowerCase())) call.args = { ...(call.args || {}), image: editImage };
       const sig = call.tool + ':' + JSON.stringify(call.args || {});
       if (sig === forcedSig && !call.forced && !nudged) {
         // The model asks for the page the chat already read for it: it is told so once, and answers from it.
@@ -2472,7 +2525,7 @@ const recChip = { state: null, text: '' };   // 'rec' | 'busy' | 'error'
 function paintRecChip() {
   const ul = $('att-chips');
   ul.querySelector('.rec-chip')?.remove();
-  if (!recChip.state) { ul.hidden = !pending.length; return; }
+  if (!recChip.state) { ul.hidden = !pending.length && !ul.querySelector('.rec-li'); return; }
   const li = el('li', 'att-chip rec-chip' + (recChip.state === 'rec' ? ' is-rec' : recChip.state === 'error' ? ' is-error' : ' is-reading'));
   li.insertAdjacentHTML('afterbegin', svg('i-mic'));
   const txt = el('span', 'att-chip-name', recChip.text);
@@ -2481,7 +2534,7 @@ function paintRecChip() {
   if (recChip.state !== 'busy') {
     const x = el('button', 'att-chip-x'); x.type = 'button'; x.innerHTML = svg('i-close');
     x.setAttribute('aria-label', t('recCancel'));
-    x.addEventListener('click', () => { if (recording) { recording.rec.cancel(); clearInterval(recording.timer); recording = null; setMic(false); } recChip.state = null; paintRecChip(); });
+    x.addEventListener('click', () => { if (recording) cancelRecording(); recChip.state = null; paintRecChip(); });
     li.append(x);
   }
   ul.prepend(li);
@@ -2490,12 +2543,27 @@ function paintRecChip() {
 function setMic(on) { const b = $('mic-btn'); b.classList.toggle('is-rec', on); b.setAttribute('aria-pressed', String(on)); b.title = on ? t('recHint') : b.getAttribute(`data-title-${lang}`); }
 const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 
+// While it records: the live waveform panel (attach.js recorderPanel) in place of the chip, with its own «Cancelar» and
+// «Enviar»; Kiko: «se tiene que ver la onda que está capturando».
+function cancelRecording() {
+  if (!recording) return;
+  recording.rec.cancel(); clearInterval(recording.timer); recording.panel?.destroy(); recording = null;
+  setMic(false); recChip.state = null; paintRecChip();
+  $('att-chips').querySelector('.rec-li')?.remove();
+}
 async function beginRecording() {
   try {
     const rec = await startRecording();
-    recording = { rec, at: performance.now(), held: true, timer: setInterval(() => { recChip.text = t('recording', clock(rec.seconds())); paintRecChip(); }, 500) };
-    recChip.state = 'rec'; recChip.text = t('recording', '0:00');
-    setMic(true); paintRecChip();
+    recording = { rec, at: performance.now(), held: true, timer: 0 };
+    const panel = recorderPanel(rec, { lang, onCancel: () => cancelRecording(), onSend: () => finishRecording() });
+    recording.panel = panel;
+    const ul = $('att-chips');
+    const li = el('li', 'rec-li');
+    li.append(panel.el);
+    ul.prepend(li);
+    ul.hidden = false;
+    recChip.state = null;
+    setMic(true);
   } catch (e) {
     console.warn('[chat] microphone', e);
     recChip.state = 'error'; recChip.text = t('micDenied'); paintRecChip();
@@ -2507,8 +2575,10 @@ async function finishRecording() {
   if (!r) return;
   recording = null;
   clearInterval(r.timer);
+  r.panel?.destroy();
+  $('att-chips').querySelector('.rec-li')?.remove();
   setMic(false);
-  const { blob, seconds } = await r.rec.stop();
+  const { blob, seconds, peaks } = await r.rec.stop();
   if (seconds < 0.6 || !blob.size) { recChip.state = null; paintRecChip(); return; }
   recChip.state = 'busy'; recChip.text = t('transcribing'); paintRecChip();
   const ctl = new AbortController();
@@ -2522,7 +2592,7 @@ async function finishRecording() {
     const samples = await toMono16k(blob);
     const out = await media.transcribe(samples, { signal: ctl.signal, lang, language: lang, onProgress: (p) => { recChip.text = `${t('transcribing')} ${p.text && p.text !== t('transcribing') ? '· ' + p.text : ''}`.trim(); paintRecChip(); } });
     if (out.text) {
-      const rec = await keepVoiceNote(blob, seconds, { chat: chat?.id || null, transcript: out.text });
+      const rec = await keepVoiceNote(blob, seconds, { chat: chat?.id || null, transcript: out.text, peaks });
       recChip.state = null; paintRecChip();
       send(out.text, { attach: [rec] });
     } else if (out.reason === 'denied') { recChip.state = null; paintRecChip(); }
@@ -2557,7 +2627,12 @@ function wireMic() {
     if (e.detail !== 0 || voiceCtl) return;
     if (recording) finishRecording(); else beginRecording().then(() => { if (recording) recording.held = false; });
   });
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && recording) { recording.rec.cancel(); clearInterval(recording.timer); recording = null; setMic(false); recChip.state = null; paintRecChip(); } });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && recording) cancelRecording(); });
+  // Holding the microphone on a phone: sliding the finger left cancels, as in WhatsApp.
+  let startX = null;
+  mic.addEventListener('pointerdown', (e) => { startX = e.clientX; });
+  addEventListener('pointermove', (e) => { if (recording?.held && startX != null && e.clientX - startX < -80) { startX = null; cancelRecording(); } });
+  addEventListener('pointerup', () => { startX = null; });
 }
 
 function wireAttach() {

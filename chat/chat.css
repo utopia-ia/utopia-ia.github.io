@@ -677,3 +677,42 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 
 /* After a picture sent alone: what to do with it. */
 .seen-chips { display: flex; flex-wrap: wrap; gap: var(--ef-s2); margin-top: var(--ef-s2); }
+
+/* A story video's keyframes in its card while it is made. */
+.tc-story { display: flex; gap: 6px; margin-top: var(--ef-s2); overflow-x: auto; }
+.tc-story canvas { width: 96px; height: auto; border-radius: var(--ef-r2); opacity: 0.55; box-shadow: 0 0 0 1px var(--ef-steel); transition: opacity var(--ef-fast) var(--ef-ease); }
+.tc-story canvas.is-shot { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .tc-story canvas { transition: none; } }
+
+/* Recording a voice note: the live waveform of the microphone, the time, a pulsing dot, Cancel and Send. */
+.rec-li { list-style: none; flex: 1 1 100%; }
+.rec-panel { --rec-wave: var(--ef-err); --rec-wave-quiet: var(--ef-graphite); display: flex; align-items: center; gap: var(--ef-s2); min-height: 44px; padding: 4px 6px 4px 4px; border: 1px solid var(--ef-err); border-radius: var(--ef-r-pill, 999px); background: var(--ef-wall); }
+.rec-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--ef-err); box-shadow: 0 0 0 0 rgb(176 31 66 / 0.45); animation: rec-dot 1.4s ease-out infinite; }
+.rec-panel.is-quiet .rec-dot { animation-duration: 2.2s; }
+@keyframes rec-dot { 0% { box-shadow: 0 0 0 0 rgb(176 31 66 / 0.45); } 70% { box-shadow: 0 0 0 9px rgb(176 31 66 / 0); } 100% { box-shadow: 0 0 0 0 rgb(176 31 66 / 0); } }
+.rec-wave { flex: 1; min-width: 60px; height: 32px; transition: opacity 0.4s ease; }
+.rec-panel.is-quiet .rec-wave { opacity: 0.55; }
+.rec-time { flex: none; min-width: 3.2em; font-variant-numeric: tabular-nums; color: var(--ef-ink); font-size: var(--ef-text-sm, 14px); }
+.rec-cancel, .rec-send { flex: none; min-height: 36px; border-radius: var(--ef-r-pill, 999px); font: inherit; cursor: pointer; }
+.rec-cancel { display: grid; place-items: center; width: 36px; border: 1px solid var(--ef-steel); background: var(--ef-wall); color: var(--ef-graphite); }
+.rec-cancel:hover { color: var(--ef-err); border-color: var(--ef-err); }
+.rec-send { padding: 0 14px; border: 0; background: var(--ef-ink); color: var(--ef-on-ink); font-weight: var(--ef-weight-strong); }
+.att-wave { display: block; margin: 4px 0; }
+@media (prefers-reduced-motion: reduce) { .rec-dot { animation: none; } .rec-wave { transition: none; } }
+
+/* A picture made from another: which one, small. */
+.tc-from { display: flex; align-items: center; gap: 6px; color: var(--ef-graphite); font-size: var(--ef-text-xs); }
+.tc-from-img, .tc-from img { width: 28px; height: 28px; object-fit: cover; border-radius: 4px; box-shadow: 0 0 0 1px var(--ef-steel); }
+
+/* The memory button lives in the top bar now, next to the model (Kiko: «no en la barra de escribir, que come mucho»). */
+.top-actions #mem-btn { width: 40px; height: 40px; }
+.top-actions #mem-btn .mem-label { display: none; }
+/* With room, it says what it is: the icon and «Memoria», like a chip next to the model. */
+@media (min-width: 900px) {
+  .top-actions #mem-btn { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 0 12px 0 10px; border: 1px solid var(--ef-steel); border-radius: var(--ef-r-pill, 999px); font: inherit; font-size: var(--ef-text-sm); }
+  .top-actions #mem-btn[hidden] { display: none; }
+  .top-actions #mem-btn .ic { grid-area: auto; }
+  .top-actions #mem-btn .mem-off-line { position: absolute; left: 10px; }
+  .top-actions #mem-btn .mem-label { display: inline; }
+  .top-actions #mem-btn.is-down::after { top: 6px; right: 6px; }
+}

@@ -54,14 +54,19 @@
 /* The box you type in is the thing to look at: a lighter plate than the page, a brass edge, a soft glow, more room and a
    bigger send button. On focus the edge and the glow get stronger. */
 .composer {
-  padding: 14px 14px 14px var(--ef-s5);
+  padding: 10px 10px 10px 8px;
   background: #3d4668; border: 1.5px solid #d9b27a;
   box-shadow: 0 0 0 4px rgba(217, 178, 122, 0.12), 0 22px 44px -18px rgba(0, 0, 0, 0.75);
 }
 .composer:focus-within { border-color: #f0d2a4; box-shadow: 0 0 0 5px rgba(217, 178, 122, 0.28), 0 22px 44px -18px rgba(0, 0, 0, 0.75); }
-.composer textarea { min-height: 56px; padding: 15px 0; font-size: 1.125rem; }
+.composer { align-items: flex-end; }
+/* One row: every control is 48 px tall and one line of text (1.125rem × 1.45 = 26 px) sits in its middle, so the
+   «+», the microphone, the send button and the words share a centre line; when the text grows, the controls stay on
+   its last line. */
+.composer textarea { min-height: 48px; padding: 11px 0; font-size: 1.125rem; line-height: 26px; }
+.composer .att-btn, .composer .mic-btn { width: 44px; height: 48px; }
 .composer textarea::placeholder { color: #c9cde0; }
 .send { width: 48px; height: 48px; border-radius: 14px; }
 .send:disabled { opacity: 0.6; }
 .dock { padding-bottom: max(var(--ef-s5), env(safe-area-inset-bottom)); }
-@media (max-width: 600px) { .composer { padding: 10px 10px 10px var(--ef-s4); } .composer textarea { font-size: 1rem; min-height: 48px; padding: 12px 0; } .send { width: 44px; height: 44px; } }
+@media (max-width: 600px) { .composer { padding: 8px; } .composer textarea { font-size: 1rem; line-height: 24px; min-height: 44px; padding: 10px 0; } .send { width: 44px; height: 44px; } .composer .att-btn, .composer .mic-btn { width: 40px; height: 44px; } }
