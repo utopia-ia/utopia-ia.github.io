@@ -357,15 +357,3 @@ export function withContext(history, block, label) {
   return [...history.slice(0, -1), m, history[history.length - 1]];
 }
 
-// The same, but for every step of a turn the block stays where it went on the first step: just before the visitor's
-// message. withContext puts it before the LAST message, so in a turn with tools it moved after every result, the
-// prompt changed in the middle, and the engine read the whole turn again at each step (measured on elffuss.com: only
-// the system prompt was reused, and a fourth step read 3,000 tokens again, over a minute on the processor). Here
-// each step's prompt starts with the previous one, and the engine reads only the new result.
-export function withTurnContext(history, block, label) {
-  const m = { role: 'user', content: `${label}\n${block}` };
-  let i = history.length - 1;
-  while (i >= 0 && (history[i].role !== 'user' || /^\[result /.test(history[i].content))) i--;
-  if (i < 0) return withContext(history, block, label);
-  return [...history.slice(0, i), m, ...history.slice(i)];
-}

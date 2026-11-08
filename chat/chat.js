@@ -26,7 +26,7 @@ import { offerInstall, installGate } from './install.js';
 import * as web from './web.js';
 import * as appview from './appview.js';
 import { mirror, WORDS as MIRROR_WORDS, mountNote } from './mirror.js';
-import { parseToolCall, writingTool, systemPrompt, contextBlock, withTurnContext, CONTEXT_LABEL } from './tools.js';
+import { parseToolCall, writingTool, systemPrompt, contextBlock, withContext, CONTEXT_LABEL } from './tools.js';
 import { createMediaTools, isMediaTool, mediaKindOf, mediaUrl, getMedia, downloadName, removeChatMedia, setMediaChat, formatBytes, describedLine } from './media-tools.js';
 import { needsMediaTools, hasMediaIn, editTarget } from './media-intent.js';
 import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
@@ -1325,6 +1325,7 @@ async function runTool(call, ctx) {
         return { text: call.tool === 'memory.save' ? andGoOn(off) : off, say: off, result: { card: { type: 'unavailable' } } };
       }
       const r = await mt.run(call.tool, a, { ask: ctx.askMemory });
+      if (call.tool === 'memory.forget') forgetTurnCtx();
       if (call.tool === 'memory.list') return { text: r.text, result: { list: true } };
       const notSaved = call.tool === 'memory.save' && (!r.card || r.card.type === 'unavailable');
       return { text: notSaved ? andGoOn(r.text) : r.text, ...(notSaved ? { say: r.text } : {}), result: { card: r.card || { type: 'note', text: r.text } } };
@@ -1629,6 +1630,13 @@ async function liveContext() {
 // record): the chat stores a placeholder, so facts never sit in the chat's own database, and a fact forgotten later,
 // or a chat switched to «Sin memoria», does not bring it back. Lists stored by older builds are replaced the same way.
 const LIST_RESULT = '[result memory.list]';
+// Each turn's live context block (date, apps, the memory relevant to it), made once when the turn starts and put back
+// in the same place, just before its visitor's message, on every later step and turn of this visit, so the prompt
+// only grows at its end (see «The context of a step»). Kept in this page only, never in the chat's record. Anything
+// that changes what the memory may say (a fact forgotten, the panel closed, «No memory» switched) clears it: old
+// blocks must not bring a forgotten fact back. It then costs one full read.
+let turnCtx = new WeakMap();
+function forgetTurnCtx() { turnCtx = new WeakMap(); }
 function modelHistory(c, live = null) {
   const latest = new Map();
   c.messages.forEach((m, i) => { if (m.call?.tool === 'app.create' && m.call.name) latest.set(m.call.name, i); });
@@ -1642,6 +1650,7 @@ function modelHistory(c, live = null) {
     if (m.call?.tool === 'app.create' && latest.get(m.call.name) !== i) {
       content = '```tool\n' + JSON.stringify({ tool: 'app.create', args: { name: m.call.name, html: '(an earlier version, replaced later)' } }) + '\n```';
     }
+    if (turnCtx.has(m)) out.push({ role: 'user', content: turnCtx.get(m) });
     out.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content });
   });
   return out;
@@ -1716,6 +1725,7 @@ function closeMemory() {
   if (sheet.open) sheet.close();
 }
 function onMemoryClosed() {
+  forgetTurnCtx();
   $('mem-sheet-body').replaceChildren();
   paintMine();
   memOpener?.focus?.({ preventScroll: true });
@@ -1763,6 +1773,7 @@ function setMemDown(down) {
 $('mem-btn')?.addEventListener('click', () => {
   const on = !incognito();
   if (chat) { chat.incognito = on; save(); } else pendingIncognito = on;
+  forgetTurnCtx();
   paintMemToggle();
 });
 repaints.add(paintMemToggle);
@@ -2179,28 +2190,54 @@ function boundedTool(call, ctx) {
   return Promise.race([work, late]).finally(() => { clearTimeout(timer); ctx.signal.removeEventListener('abort', relay); });
 }
 
+// A call the chat answers with a word instead of running it (a picture sent alone, a repeat, out of steps): kept in
+// what the model reads, so the next step's prompt starts with this one's (see below), but never painted (meta
+// 'result', like a tool's answer: shown by nothing).
+const unshownCall = (m) => ({ role: 'assistant', content: m.content, thinking: '', meta: 'result' });
+
 // ---------- The context of a step ----------
-// The engine fits the history to the context by dropping the OLDEST messages: in a web turn on a phone (LFM3 Q4_0,
-// 8,192 tokens, of which the reasoning reserves 4,000) the second result already pushed out the visitor's question,
-// and the model went on without knowing what it was looking for. So each step is measured first, with a cautious
-// count (CHARS_PER_TOKEN below what LFM3's tokenizer gives on these prompts: ~3.5 measured), and made to fit:
-//   1. always: the web results of earlier turns are a digest (titles, addresses, a line each). Measured on
-//      elffuss.com with the processor (4,096 tokens): a follow-up question read 3,400 tokens again before its first
-//      word, most of them the pages of the previous answer, and the fifth step of a search had 119 tokens left for
-//      its answer, which stopped in the middle of a word
+// Each step's prompt is the previous one plus what happened since, byte for byte, so the engine reads only the new
+// part (its level-1 reuse needs the previous prompt to be an EXACT prefix of the new one; any change in the middle
+// makes it read everything after the system prompt again). That is why:
+//   · the live context block (CONTEXTO AHORA: date, apps, the turn's memory) is made once per turn and stays where it
+//     went, just before the visitor's message, for every step of the turn and for every later turn of the visit
+//     (turnCtx below); it is never written into the chat's own record, so facts do not sit there
+//   · the history goes to the engine as it is (ifFull: 'error'): the engine no longer drops or reorders messages,
+//     it says ContextFull, and the chat decides what to shorten
+// Measured on elffuss.com before this: only the system prompt was reused, a follow-up on the processor read 3,400
+// tokens before its first word, and the fifth step of a search had 119 tokens left and stopped in the middle of a word.
+//
+// When a step does not fit (the engine's real count when the model is loaded: countTokens; else CHARS_PER_TOKEN,
+// cautious against the ~3.5 measured), in this order, each one breaking the reuse once:
+//   1. the context blocks of earlier turns go, and their web results become digests (titles, addresses, a line each)
 //   2. this step answers without the reasoning block (it has the results; it only has to write)
-//   3. the earlier web results of this turn become a digest; the newest stays whole
-//   4. the earlier turns are left to the engine to drop (it drops the oldest first); this turn must fit on its own
+//   3. the earlier web results of this turn become digests; the newest stays whole
+//   4. the earlier turns go, oldest first; this turn must fit on its own
 // If this turn alone does not fit, the turn closes with what it found instead of overflowing.
 const CHARS_PER_TOKEN = 3;
 const ANSWER_ROOM = 900;             // tokens kept free for the answer when the step does not reason
+const REASON_ANSWER_ROOM = 2000;     // …and, past its thinking budget, when it does (the longest web answers measured: ~1,800)
+const MSG_OVERHEAD = 6;              // the template's tokens around each message (<|im_start|>role … <|im_end|>)
 function contextOf() {
   const m = model() || {};
   const real = engine?.contextoEfectivo?.() || 0;
   return real || (device.cpu ? Math.min(m.ctx || 4096, 4096) : (m.ctx || 8192));
 }
-const estTokens = (system, history) => Math.ceil((system.length + history.reduce((n, x) => n + String(x.content).length + 12, 0)) / CHARS_PER_TOKEN);
+// Tokens of a text: the engine's tokenizer when a model is loaded (cached: the same messages are counted at every
+// step), else the cautious estimate.
+const tokCache = new Map();
+function tokensOf(text) {
+  const s = String(text);
+  const hit = tokCache.get(s);
+  if (hit != null) return hit;
+  const n = engine?.countTokens?.(s);
+  const v = Number.isFinite(n) ? n : Math.ceil(s.length / CHARS_PER_TOKEN);
+  if (Number.isFinite(n)) { if (tokCache.size > 400) tokCache.delete(tokCache.keys().next().value); tokCache.set(s, v); }
+  return v;
+}
+const estTokens = (system, history) => tokensOf(system) + MSG_OVERHEAD + history.reduce((n, x) => n + tokensOf(x.content) + MSG_OVERHEAD, 0);
 const isWebResult = (x) => x.role === 'user' && /^\[result web\./.test(x.content);
+const isCtx = (x) => x.role === 'user' && /^(CONTEXTO AHORA|CONTEXT NOW)/.test(x.content);
 function digestResult(content) {
   const lines = String(content).split('\n');
   const keep = [];
@@ -2219,25 +2256,37 @@ function digestResult(content) {
   }
   return `${lines[0]}\n${t('digest')}\n${keep.length ? keep.join('\n') : lines.slice(1).join(' ').slice(0, 300)}`;
 }
-// → { history, reason, over } for this step. `start`: where this turn begins in `history` (the visitor's message).
-function fitTurn(history, system, reason, { ctx = contextOf(), budget = (r) => ctx - (r === false ? ANSWER_ROOM : (model()?.presupuesto || 4000)) } = {}) {
+// → { history, reason, over, steps } for this step. `tighter`: tokens to take off the budget (the engine said
+// ContextFull with a count the estimate missed).
+function fitTurn(history, system, reason, { ctx = contextOf(), tighter = 0, reasonRoom = model()?.presupuesto || 4000, budget = (r) => ctx - tighter - (r === false ? ANSWER_ROOM : reasonRoom) } = {}) {
   let h = history, r = reason;
+  // Where this turn begins: its context block, else the visitor's message.
   let start = -1;
-  for (let i = h.length - 1; i >= 0; i--) if (h[i].role === 'user' && !/^\[result /.test(h[i].content) && !/^(CONTEXTO AHORA|CONTEXT NOW)/.test(h[i].content)) { start = i; break; }
+  for (let i = h.length - 1; i >= 0; i--) if (h[i].role === 'user' && !/^\[result /.test(h[i].content) && !isCtx(h[i])) { start = i; break; }
+  if (start > 0 && isCtx(h[start - 1])) start--;
   const fits = (list = h) => estTokens(system, list) <= budget(r);
-  // Always: an earlier turn's web results are digests. Its answer, with the addresses it cited, is what carries over.
-  h = h.map((x, i) => (i < start && isWebResult(x) ? { ...x, content: digestResult(x.content) } : x));
   if (fits()) return { history: h, reason: r, over: false, steps: [] };
-  const steps = [];
+  const steps = ['earlier'];
+  const removed = h.slice(0, Math.max(0, start)).filter(isCtx).length;
+  h = h.filter((x, i) => i >= start || !isCtx(x));
+  start -= removed;
+  h = h.map((x, i) => (i < start && isWebResult(x) ? { ...x, content: digestResult(x.content) } : x));
+  if (fits()) return { history: h, reason: r, over: false, steps };
   if (r !== false) { r = false; steps.push('noReason'); if (fits()) return { history: h, reason: r, over: false, steps }; }
   let newest = -1;
   for (let i = h.length - 1; i > start; i--) if (isWebResult(h[i])) { newest = i; break; }
   h = h.map((x, i) => (i > start && i !== newest && isWebResult(x) ? { ...x, content: digestResult(x.content) } : x));
   steps.push('thisTurn');
   if (fits()) return { history: h, reason: r, over: false, steps };
-  // The earlier turns are the engine's to drop; what cannot be dropped is this turn.
-  steps.push('engineDrops');
-  return { history: h, reason: r, over: start >= 0 && !fits(h.slice(start)), steps };
+  // The earlier turns go, oldest first, a whole turn at a time (a turn starts at a visitor's message).
+  steps.push('dropEarlier');
+  while (start > 0 && !fits()) {
+    let cut = 1;
+    while (cut < start && !(h[cut].role === 'user' && !/^\[result /.test(h[cut].content))) cut++;
+    h = h.slice(cut);
+    start -= cut;
+  }
+  return { history: h, reason: r, over: !fits(), steps };
 }
 
 // An engine whose step did not let go after a stall: asked to stop; if it still holds on, it is let go and loaded
@@ -2387,6 +2436,7 @@ async function runTurn(li, mine, ctl, reason) {
     // The memory for this turn: asked once, from the store, with the model's registry entry (its id and context size
     // set the budget). The same bytes go into every step; only a save during the turn rebuilds it.
     let memPrompt = null;
+    let looseCtx = '';               // the context block when the turn has no visitor's message to anchor it (never seen)
     const done = [];                 // signatures of the calls already run this turn (Claw's anti-loop)
     const liveResults = new Map();   // result message -> what the model reads in this turn only (memory.list)
     let lastText = '';
@@ -2414,26 +2464,36 @@ async function runTurn(li, mine, ctl, reason) {
         call = forced; forced = null;
         finished = true;
       } else {
-        const now = await untilStopped(liveContext(), ctl.signal);
-        if (appTurn === null) appTurn = needsAppTools(userText, { open: now.open, names: (now.apps || []).map((a) => a.name) }).apps;
-        const full = withTurnContext(modelHistory(mine, liveResults), contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang), voice: !!voiceTurn }), CONTEXT_LABEL[lang]);
+        // The turn's context block: made on its first model step, then the same bytes in the same place (turnCtx).
+        const anchor = lastUser && mine.messages.includes(lastUser) ? lastUser : null;
+        if (appTurn === null || !anchor || !turnCtx.has(anchor)) {
+          const now = await untilStopped(liveContext(), ctl.signal);
+          if (appTurn === null) appTurn = needsAppTools(userText, { open: now.open, names: (now.apps || []).map((a) => a.name) }).apps;
+          const text = `${CONTEXT_LABEL[lang]}\n${contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang), voice: !!voiceTurn })}`;
+          if (anchor && !turnCtx.has(anchor)) turnCtx.set(anchor, text);
+          if (!anchor) looseCtx = text;
+        }
+        const hist = modelHistory(mine, liveResults);
+        const full = anchor ? hist : withContext(hist, looseCtx.replace(/^[^\n]*\n/, ''), CONTEXT_LABEL[lang]);
         const system = systemPrompt(lang, memPrompt, { web: !mirror, media: mediaTurn, apps: appTurn });
+        // A thinking budget: the first step has to choose (answer, search, a tool); the later ones already have the
+        // results in front of them. Without it a greeting thought over a thousand tokens before its first word.
+        // The budget is a time, not a number of tokens: what the last turn measured it writes in a second, times 4 s
+        // (1.5 s in a voice turn), within the old caps; under 32 tokens it does not reason at all (0 would be «no limit»).
+        const think = reason === false ? 0 : thinkBudget(step, !!voiceTurn);
+        // What a reasoning step holds back for itself: its thinking budget and room for an answer, not the registry's
+        // 4,000 (the thinking stops at `pensar` anyway). On a phone (8,192 tokens) the 4,000 left a follow-up 4,192
+        // for the whole conversation, and every turn had to shorten earlier ones, which costs the reuse. An app is one
+        // long HTML answer: it keeps the full budget.
+        const reasonRoom = appTurn ? (model()?.presupuesto || 4000) : Math.max(1024, think + REASON_ANSWER_ROOM);
         // Measured against the model's real context before the engine sees it (fitTurn).
-        const fit = fitTurn(full, system, reason);
+        let fit = fitTurn(full, system, think < 32 ? false : reason, { reasonRoom });
         if (fit.steps.length) console.info('[chat] context:', fit.steps.join(' → '), fit.over ? '(does not fit: closing)' : '');
         if (fit.over && webSources.length) {
           msg.content = webClose(webSources, true);
           finished = true;
           break;
         }
-        const history = fit.history;
-        stepReason = fit.reason;
-        // A thinking budget: the first step has to choose (answer, search, a tool); the later ones already have the
-        // results in front of them. Without it a greeting thought over a thousand tokens before its first word.
-        // The budget is a time, not a number of tokens: what the last turn measured it writes in a second, times 4 s
-        // (1.5 s in a voice turn), within the old caps; under 32 tokens it does not reason at all (0 would be «no limit»).
-        const think = stepReason === false ? 0 : thinkBudget(step, !!voiceTurn);
-        engine.setSampling?.({ razonar: stepReason === false || think < 32 ? false : null, pensar: think });
         let queued = false;
         const paint = () => {
           queued = false;
@@ -2444,36 +2504,71 @@ async function runTurn(li, mine, ctl, reason) {
           scrollEnd();
           voice?.answer(msg, msg.content);     // read aloud as it is written (Altavoz, Conversación)
         };
-        // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it when it
-        // fits the history to the model's context: no `reserveTokens` on top, or it would be subtracted twice.
+        // The memory block travels inside `history` (the CONTEXT NOW message), so the engine already counts it: no
+        // `reserveTokens` on top, or it would be subtracted twice.
         // The step has its own stop: the visitor's, or the watchdog's when nothing comes for STALL_MS (no token and no
         // reading progress; hidden time does not count). Then the step is not waited for any longer, whatever the
         // engine does with its stop.
-        const stepCtl = new AbortController();
-        const relay = () => stepCtl.abort();
-        ctl.signal.addEventListener('abort', relay, { once: true });
-        let beat = Date.now(), stalled = false;
-        const dog = setInterval(() => {
-          if (document.hidden) { beat = Date.now(); return; }
-          if (Date.now() - beat > STALL_MS()) { stalled = true; stepCtl.abort(); }
-        }, 1000);
-        const pending = engine.chat(history, system, (tok) => {
-          raw += tok;
-          beat = Date.now();
-          if (!queued) { queued = true; requestAnimationFrame(paint); }
-        }, { signal: stepCtl.signal, onPrefill: (done, total) => { beat = Date.now(); if (!finished && !raw) paintReading(li, done, total); } });
-        let result;
-        try {
-          result = await untilStopped(pending, stepCtl.signal);
-        } catch (e) {
-          if (stalled && !ctl.signal.aborted) {
-            recoverEngine(pending);
-            throw Object.assign(new Error('stalled'), { code: 'stalled' });
+        // ifFull 'error': the engine takes the history as it is and says ContextFull when it does not fit with room
+        // for the answer (its exact count). Then: with room for a short answer, the step answers without reasoning
+        // within that room; without it, fitTurn shortens more; and a turn that cannot fit closes with what it found.
+        // Without web results to close on, the last try lets the engine fit it as before (ifFull 'trim').
+        const runStep = (history, sampling, ifFull) => {
+          engine.setSampling?.(sampling);
+          const stepCtl = new AbortController();
+          const relay = () => stepCtl.abort();
+          ctl.signal.addEventListener('abort', relay, { once: true });
+          let beat = Date.now(), stalled = false;
+          const dog = setInterval(() => {
+            if (document.hidden) { beat = Date.now(); return; }
+            if (Date.now() - beat > STALL_MS()) { stalled = true; stepCtl.abort(); }
+          }, 1000);
+          const pending = engine.chat(history, system, (tok) => {
+            raw += tok;
+            beat = Date.now();
+            if (!queued) { queued = true; requestAnimationFrame(paint); }
+          }, { signal: stepCtl.signal, ifFull, onPrefill: (done, total) => { beat = Date.now(); if (!finished && !raw) paintReading(li, done, total); } });
+          return untilStopped(pending, stepCtl.signal).catch((e) => {
+            if (stalled && !ctl.signal.aborted) {
+              recoverEngine(pending);
+              throw Object.assign(new Error('stalled'), { code: 'stalled' });
+            }
+            throw e;
+          }).finally(() => { clearInterval(dog); ctl.signal.removeEventListener('abort', relay); });
+        };
+        let result, closed = false, tighter = 0;
+        let history = fit.history;
+        stepReason = fit.reason;
+        let sampling = stepReason === false
+          ? { razonar: false, pensar: 0, maxTokens: 0 }
+          : { razonar: null, pensar: think, maxTokens: appTurn ? 0 : reasonRoom };
+        for (let attempt = 0; ; attempt++) {
+          try {
+            result = await runStep(history, sampling, attempt < 3 ? 'error' : 'trim');
+            break;
+          } catch (e) {
+            if (e?.name !== 'ContextFull' || attempt >= 3) throw e;
+            const room = e.contextTokens - e.promptTokens;
+            console.info(`[chat] context full: ${e.promptTokens} of ${e.contextTokens} tokens, ${e.answerTokens} wanted for the answer`);
+            if (room >= ANSWER_ROOM) {
+              // It fits, only the answer's room is short: this step answers without reasoning, within the room left.
+              stepReason = false;
+              sampling = { razonar: false, pensar: 0, maxTokens: room - 8 };
+              continue;
+            }
+            tighter += e.promptTokens - (e.contextTokens - ANSWER_ROOM) + 32;
+            fit = fitTurn(full, system, false, { tighter, reasonRoom });
+            console.info('[chat] context:', fit.steps.join(' → '), fit.over ? '(does not fit: closing)' : '');
+            if (fit.over && webSources.length) { closed = true; break; }
+            history = fit.history;
+            stepReason = false;
+            sampling = { razonar: false, pensar: 0, maxTokens: 0 };
           }
-          throw e;
-        } finally {
-          clearInterval(dog);
-          ctl.signal.removeEventListener('abort', relay);
+        }
+        if (closed) {
+          msg.content = webClose(webSources, true);
+          finished = true;
+          break;
         }
         finished = true;
         const med = engine.ultimaMedida?.();
@@ -2490,6 +2585,7 @@ async function runTurn(li, mine, ctl, reason) {
           const before = msg.content.split(/```|<function|<tool_call>|\{\s*"tool"/i)[0].trim();
           if (!before && !attachNudged) {
             attachNudged = true;
+            mine.messages.push(unshownCall(msg));
             mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${t('noToolHere')}`, meta: 'result' });
             li.remove();
             continue;
@@ -2539,6 +2635,7 @@ async function runTurn(li, mine, ctl, reason) {
       if (sig === forcedSig && !call.forced && !nudged) {
         // The model asks for the page the chat already read for it: it is told so once, and answers from it.
         nudged = true;
+        mine.messages.push(unshownCall(msg));
         mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${lang === 'es' ? 'Esa página ya está leída arriba: responde con lo que dice.' : 'That page was already read above: answer from what it says.'}`, meta: 'result' });
         li.remove();
         continue;
@@ -2552,12 +2649,14 @@ async function runTurn(li, mine, ctl, reason) {
       if (call.tool.startsWith('web.') && webSources.length && step >= MAX_STEPS - 1) {
         if (answerAsked) { msg.content = webClose(webSources, true); break; }
         answerAsked = true;
+        mine.messages.push(unshownCall(msg));
         mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${t('answerNow')}`, meta: 'result' });
         li.remove();
         continue;
       }
       if (done.includes(sig) && call.tool.startsWith('web.') && !repeatNudged && step < MAX_STEPS - 1) {
         repeatNudged = true;
+        mine.messages.push(unshownCall(msg));
         mine.messages.push({ role: 'user', content: `[result ${call.tool}]\n${t('alreadyAbove')}`, meta: 'result' });
         li.remove();
         continue;
