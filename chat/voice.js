@@ -512,9 +512,21 @@ export function createVoice(hooks) {
   player.preload = 'auto';
   if ('preservesPitch' in player) player.preservesPitch = true;
   const tts = { items: [], playing: null, gen: 0, ctl: null, lang: null, unlocked: false };
+  // A phone reads with the device's own voice (speechSynthesis: Spain's Spanish voice on an iPhone): Elffuss's voice
+  // did not fit in an iPhone tab next to the rest of the conversation (9-nov). No model, no memory of the tab. The
+  // orb then moves with a made-up level, not the sound's.
+  const nativeVoice = () => policy === 'turns' && typeof globalThis.speechSynthesis?.speak === 'function';
+  function nativeVoiceFor(lang) {
+    const want = lang === 'en' ? 'en-US' : 'es-ES';
+    const all = globalThis.speechSynthesis.getVoices?.() || [];
+    const same = all.filter((v) => v.lang?.replace('_', '-') === want);
+    return same.find((v) => /m[oó]nica/i.test(v.name)) || same.find((v) => v.localService) || same[0] || all.find((v) => v.lang?.startsWith(want.slice(0, 2))) || null;
+  }
+  const madeUp = (t) => 0.35 + 0.3 * Math.abs(Math.sin(t / 95)) * Math.abs(Math.sin(t / 37));
   const botSource = {
     level() {
       const p = tts.playing;
+      if (p?.native) return madeUp(performance.now());
       if (!p?.pcm || player.paused) return 0;
       const i = Math.floor(player.currentTime * p.pcm.rate), win = Math.round(p.pcm.rate * 0.03);
       let s = 0, n = 0;
@@ -525,6 +537,7 @@ export function createVoice(hooks) {
     wave(n) {
       const out = new Float32Array(n);
       const p = tts.playing;
+      if (p?.native) { const t = performance.now(), a = madeUp(t) * 0.6; for (let k = 0; k < n; k++) out[k] = a * Math.sin(k * 0.7 + t / 60); return out; }
       if (!p?.pcm || player.paused) return out;
       const i = Math.floor(player.currentTime * p.pcm.rate), span = Math.round(p.pcm.rate * 0.025);
       for (let k = 0; k < n; k++) out[k] = Math.max(-1, Math.min(1, (p.pcm.samples[i + Math.floor((k * span) / n)] || 0) * 3));
@@ -555,11 +568,14 @@ export function createVoice(hooks) {
     // Both players: the one for the answer and the one for «Un momento…» (a phone unlocks each element on its own).
     const plays = [player, fillerPlayer].map((el) => { el.src = u; return el.play().catch(() => {}); });
     Promise.all(plays).finally(() => setTimeout(() => URL.revokeObjectURL(u), 1000));
+    // The device's voice too: iOS speaks later only if something was spoken from a tap.
+    if (nativeVoice()) { try { const z = new SpeechSynthesisUtterance(' '); z.volume = 0; speechSynthesis.speak(z); } catch { /* — */ } }
   }
   const speakingModes = () => state.mode === 'speaker' || state.mode === 'conversation';
   function ttsReset() { ttsStop(); tts.lang = null; }
   function ttsStop() {
     stopFiller();
+    if (nativeVoice()) { try { speechSynthesis.cancel(); } catch { /* — */ } }
     tts.gen++;
     tts.ctl?.abort(); tts.ctl = null;
     for (const it of tts.items) if (it.url) URL.revokeObjectURL(it.url);
@@ -581,6 +597,23 @@ export function createVoice(hooks) {
   function pump() {
     if (holdForTurn) return;
     const gen = tts.gen;
+    if (nativeVoice()) {
+      const head = tts.items[0];
+      if (tts.playing || !head) return;
+      head.native = true;
+      tts.playing = head;
+      caption = head.text;
+      stopFiller();
+      const u = new SpeechSynthesisUtterance(head.text);
+      u.lang = head.lang === 'en' ? 'en-US' : 'es-ES';
+      const v = nativeVoiceFor(head.lang); if (v) u.voice = v;
+      u.rate = Math.min(1.5, Math.max(0.7, settings.speed || 1));
+      u.onstart = () => { if (gen === tts.gen) { log('audio-start'); dispatch({ type: 'AUDIO_START' }); } };
+      u.onend = u.onerror = () => { if (gen === tts.gen) endOfSentence(head); };
+      speechSynthesis.speak(u);
+      render();
+      return;
+    }
     tts.ctl ||= new AbortController();
     // Two sentences synthesised ahead: the next one is ready when this one ends.
     for (const it of tts.items.slice(0, 2)) {
