@@ -2988,8 +2988,8 @@ function appListClone() {
 }
 
 // The menu's folding groups (Your apps, Tools, Apps), under the chats: each one stays as the visitor left it, in
-// this browser. Until then they are open while there are few chats (the room is there, and a first visit sees the
-// tools) and folded from four chats on, so the chats keep the room.
+// this browser. Until then Tools and Apps are open, and Your apps is open while there are few chats and folded
+// from four chats on, so the chats keep the room.
 const GROUPS_KEY = 'elffuss.side.groups';
 const sideGroups = (() => { try { return JSON.parse(localStorage.getItem(GROUPS_KEY) || '{}') || {}; } catch { return {}; } })();
 for (const d of document.querySelectorAll('.side .side-group')) {
@@ -3005,7 +3005,7 @@ for (const d of document.querySelectorAll('.side .side-group')) {
 }
 function autoGroups(chats) {
   for (const d of document.querySelectorAll('.side .side-group[data-auto]')) {
-    const open = chats < 4;
+    const open = d.dataset.group !== 'mine' || chats < 4;
     d._autoOpen = open;
     if (d.open !== open) d.open = open;
   }

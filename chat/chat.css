@@ -62,8 +62,9 @@ body { overflow: hidden; background: var(--ef-wall); }
 
 /* The chats take the menu's room and scroll in it, at least eight rows high; what is under them folds (.side-rest). */
 .chats { display: flex; flex-direction: column; flex: 1 1 0; min-height: calc(8 * 38px + 1.6rem); }
-/* With a group open below, the chats give it room down to six rows (the group's list scrolls past that). */
-.side:has(.side-rest .side-group[open]) .chats { min-height: calc(6 * 38px + 1.6rem); }
+/* With a group open below (Tools and Apps are, by default), the chats give it room down to four rows, so both
+   lists are in sight; the chats scroll past that. */
+.side:has(.side-rest .side-group[open]) .chats { min-height: calc(4 * 38px + 1.6rem); }
 .chat-list { flex: 0 1 auto; min-height: 0; margin: 0; padding: 0; list-style: none; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ef-steel-strong) transparent; }
 .chat-item { position: relative; display: flex; align-items: center; border-radius: var(--ef-r2); }
 .chat-item:hover, .chat-item:focus-within { background: var(--ef-board); }
@@ -460,7 +461,7 @@ body { overflow: hidden; background: var(--ef-wall); }
   .side { gap: var(--ef-s2); padding-top: var(--ef-s3); }
   .made-in { display: none; }
   .chats { min-height: calc(7 * 38px + 1.6rem); }
-  .side:has(.side-rest .side-group[open]) .chats { min-height: calc(5 * 38px + 1.6rem); }
+  .side:has(.side-rest .side-group[open]) .chats { min-height: calc(3 * 38px + 1.6rem); }
   .side-rest { min-height: calc(3 * 34px + 0.75rem); margin-top: 0; }
   .install-entry { margin-bottom: 0; }
 }
