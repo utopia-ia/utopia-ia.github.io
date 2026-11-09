@@ -204,7 +204,13 @@ export const canRecord = () => !!(globalThis.navigator?.mediaDevices?.getUserMed
  * The microphone is released as soon as the note ends.
  */
 export async function startRecording() {
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
+  // The context for the live waveform is made here, in the tap, before the microphone's await: Apple's mobile browser
+  // leaves one made after it suspended, and the waveform stayed flat.
+  let ac = null;
+  try { ac = new (globalThis.AudioContext || globalThis.webkitAudioContext)(); ac.resume().catch(() => {}); } catch { ac = null; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }); }
+  catch (err) { try { ac?.close(); } catch { /* closed */ } throw err; }
   const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
   const rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
   const chunks = [];
@@ -212,9 +218,9 @@ export async function startRecording() {
   const t0 = performance.now();
   const ended = new Promise((resolve) => { rec.onstop = resolve; });
   // What the microphone hears, for the live waveform: an AnalyserNode on the same stream (nothing is played back).
-  let ac = null, analyser = null, buf = null;
+  let analyser = null, buf = null;
   try {
-    ac = new (globalThis.AudioContext || globalThis.webkitAudioContext)();
+    if (!ac) throw new Error('no Web Audio');
     analyser = ac.createAnalyser();
     analyser.fftSize = 1024;
     analyser.smoothingTimeConstant = 0.6;

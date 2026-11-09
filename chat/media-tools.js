@@ -624,7 +624,8 @@ export function createMediaTools(hooks) {
         if (!ok) return { error: '', reason: 'denied' };
       }
       if (globalThis.matchMedia?.('(pointer: coarse)').matches) { await hooks.unloadLlm(); unloaded = true; }
-      task = new mod.SpeechToText({ store: e.store, runtime: e.runtime, registry: await mod.registry(), onProgress: (p) => { try { onProgress(progressWords(p, lang)); } catch { /* painting */ } } });
+      // «Running» with no stage of its own would read «Looking at the picture…»: the chat says «Transcribing» itself.
+      task = new mod.SpeechToText({ store: e.store, runtime: e.runtime, registry: await mod.registry(), onProgress: (p) => { try { onProgress(p?.status === 'running' && !p.stage ? { text: '', pct: null } : progressWords(p, lang)); } catch { /* painting */ } } });
       try {
         const out = await task.run(samples, { language, signal });
         return { text: String(out?.text || '').trim() };

@@ -313,6 +313,37 @@ export function createVoice(hooks) {
     p.missing = p.items.reduce((n, it) => n + it.missing, 0);
   }
 
+  // ---------- Sound and the microphone on phones ----------
+  // Apple's mobile browser starts sound only from a tap: an AudioContext made or resumed outside one stays suspended
+  // and its resume() never settles (measured on an iPhone, 9-nov), and the microphone asked for after the tap's awaits
+  // waited with no question in sight («Preparando la voz…» for ever). So the tap that chooses a voice mode wakes the
+  // one context the voice uses (never closed) and, for a conversation, asks for the microphone right there; what
+  // runs later takes them. Any later tap wakes the context again (the phone suspends it when its sound changes).
+  const MIC = { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } };
+  const micError = (err) => {
+    const code = err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'mic-denied' : err?.name === 'NotFoundError' ? 'mic-missing' : 'no-audio';
+    return Object.assign(new Error(code), { code });
+  };
+  let audioCtx = null, micAsk = null;
+  function audioContext() {
+    if (!audioCtx || audioCtx.state === 'closed') { const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext; audioCtx = new Ctx(); }
+    return audioCtx;
+  }
+  /** From a tap: the context runs, and the players may play. */
+  function wake() {
+    try { const ac = audioContext(); if (ac.state !== 'running') ac.resume().catch(() => {}); } catch { /* no Web Audio */ }
+    unlockAudio();
+  }
+  /** From a tap: the microphone's question, now (its answer is taken by askMic() or openMic()). */
+  function askMicNow() {
+    if (mic || micAsk || !navigator.mediaDevices?.getUserMedia) return;
+    micAsk = navigator.mediaDevices.getUserMedia(MIC);
+    micAsk.catch(() => {});
+  }
+  function takeMic() { const a = micAsk; micAsk = null; return a || navigator.mediaDevices.getUserMedia(MIC); }
+  function dropMic() { const a = micAsk; micAsk = null; a?.then((s) => s.getTracks().forEach((t) => t.stop()), () => {}); }
+  for (const type of ['touchend', 'click']) document.addEventListener(type, () => { if (state.mode !== 'text' && audioCtx && audioCtx.state !== 'running') wake(); }, true);
+
   // ---------- The microphone ----------
   let mic = null;
   const ep = createEndpointer({ silenceMs: settings.pauseMs });
@@ -321,15 +352,11 @@ export function createVoice(hooks) {
     if (mic) return;
     if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('no-audio'), { code: 'no-audio' });
     let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
-    } catch (err) {
-      const code = err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'mic-denied' : err?.name === 'NotFoundError' ? 'mic-missing' : 'no-audio';
-      throw Object.assign(new Error(code), { code });
-    }
-    const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-    const ac = new Ctx();
-    try { await ac.resume(); } catch { /* resumes on the next gesture */ }
+    try { stream = await takeMic(); } catch (err) { throw micError(err); }
+    const ac = audioContext();
+    // Never waited on for long: outside a tap it does not settle, and the next tap wakes it (above).
+    if (ac.state !== 'running') await Promise.race([ac.resume().catch(() => {}), new Promise((r) => setTimeout(r, 300))]);
+    debug.audio = ac.state;
     const srcNode = ac.createMediaStreamSource(stream);
     const analyser = ac.createAnalyser();
     analyser.fftSize = 1024;
@@ -338,7 +365,9 @@ export function createVoice(hooks) {
     const m = { stream, ac, srcNode, analyser, buf, node: null, closed: false };
     const onSamples = (x) => { if (!m.closed) samples(resampleTo16k(x, ac.sampleRate)); };
     try {
-      await ac.audioWorklet.addModule(new URL('./voice-worklet.js', import.meta.url));
+      // Once per context: the context stays, and registering the processor again would fail.
+      ac.voiceWorklet ||= ac.audioWorklet.addModule(new URL('./voice-worklet.js', import.meta.url));
+      await ac.voiceWorklet;
       m.node = new AudioWorkletNode(ac, 'voice-capture');
       m.node.port.onmessage = (e) => onSamples(e.data);
       srcNode.connect(m.node);
@@ -352,6 +381,7 @@ export function createVoice(hooks) {
     // A sink that plays nothing keeps the graph pulling on every engine.
     const mute = ac.createGain(); mute.gain.value = 0;
     m.node.connect?.(mute); mute.connect(ac.destination);
+    m.mute = mute;
     mic = m;
     ep.reset();
     frames.length = 0; frameFill = 0; vadQueue.length = 0;
@@ -364,9 +394,10 @@ export function createVoice(hooks) {
     const m = mic; mic = null;
     if (!m) return;
     m.closed = true;
-    try { m.node?.disconnect(); m.srcNode.disconnect(); } catch { /* gone */ }
+    try { m.node?.disconnect(); m.srcNode.disconnect(); m.analyser.disconnect(); m.mute?.disconnect(); } catch { /* gone */ }
+    if (m.node?.port) m.node.port.onmessage = null;
     m.stream.getTracks().forEach((t) => t.stop());
-    try { m.ac.close(); } catch { /* closed */ }
+    // The context stays (audioContext()): a phone would not let a new one run without a tap.
     ep.reset();
     debug.mic = 'closed';
   }
@@ -517,8 +548,9 @@ export function createVoice(hooks) {
     s(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); s(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
     v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
     const u = URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
-    player.src = u;
-    player.play().catch(() => {}).finally(() => setTimeout(() => URL.revokeObjectURL(u), 1000));
+    // Both players: the one for the answer and the one for «Un momento…» (a phone unlocks each element on its own).
+    const plays = [player, fillerPlayer].map((el) => { el.src = u; return el.play().catch(() => {}); });
+    Promise.all(plays).finally(() => setTimeout(() => URL.revokeObjectURL(u), 1000));
   }
   const speakingModes = () => state.mode === 'speaker' || state.mode === 'conversation';
   function ttsReset() { ttsStop(); tts.lang = null; }
@@ -683,10 +715,12 @@ export function createVoice(hooks) {
           const yes = await consent(mode, p);
           if (!yes) { setMode('text'); return; }
           settings.seen = true; keep();
-        } else if (mode === 'conversation') await askMic();
+        } else if (mode === 'conversation') await askMic({ keep: true });
         if (state.mode !== mode) return;
         loadPct = null; render();
-        if (policy === 'turns' && hooks.turnRunning()) return;     // a phone loads the voice when the answer is over
+        // A phone loads the voice when the answer being written is over (it used to return here, and with no turn of
+        // its own to end, nothing loaded it: «Preparando la voz…» for ever).
+        while (policy === 'turns' && hooks.turnRunning()) { await new Promise((r) => setTimeout(r, 200)); if (state.mode !== mode) { if (mode === 'conversation') dropMic(); return; } }
         if (mode === 'conversation') {
           await openMic();                        // the permission question first: it is the one the user must answer
           if (policy === 'turns') await hooks.unloadLlm().catch(() => {});
@@ -746,7 +780,9 @@ export function createVoice(hooks) {
   }
   function setMode(mode) {
     if (!MODES.includes(mode)) return;
-    if (mode !== 'text') unlockAudio();
+    // Called from the tap that chose it: the sound wakes now, and a conversation asks for the microphone now.
+    if (mode !== 'text') wake();
+    if (mode === 'conversation') askMicNow(); else dropMic();
     settings.mode = mode === 'conversation' ? settings.mode : mode;
     if (mode !== 'conversation') { settings.mode = mode; keep(); }
     minimized = false;
@@ -927,10 +963,11 @@ export function createVoice(hooks) {
   const q = (s) => st.querySelector(s);
   const orbs = createOrbs(q('.vs-canvas'), { reduced: reduceMotion() });
   orbs.set({ user: userSource, bot: botSource });
-  q('.vs-orb-btn').addEventListener('click', () => dispatch({ type: 'TAP' }));
+  q('.vs-orb-btn').addEventListener('click', () => { wake(); dispatch({ type: 'TAP' }); });
   q('.vs-send').addEventListener('click', () => dispatch({ type: 'SEND', text: heard }));
   q('.vs-discard').addEventListener('click', () => { heard = ''; dispatch({ type: 'DISCARD' }); });
   q('.vs-pause').addEventListener('click', () => {
+    wake();
     if (state.phase === 'paused') dispatch({ type: 'TAP' });
     else if (state.phase === 'listening') dispatch({ type: 'TAP' });
     else { dispatch({ type: 'TAP' }); if (state.phase === 'listening') dispatch({ type: 'TAP' }); }
@@ -1002,9 +1039,13 @@ export function createVoice(hooks) {
 
   // ---------- First use ----------
   /** The microphone's permission, asked now and let go at once (the mode opens it for real when it is ready). */
-  async function askMic() {
-    try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); st.getTracks().forEach((t) => t.stop()); }
-    catch (err) { const code = err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'mic-denied' : err?.name === 'NotFoundError' ? 'mic-missing' : 'no-audio'; throw Object.assign(new Error(code), { code }); }
+  // The answer to the question the tap asked (askMicNow); `keep` holds the microphone for openMic(), which follows at
+  // once, and without it the microphone is let go (a long download comes first; the permission stays).
+  async function askMic({ keep = false } = {}) {
+    let st;
+    try { st = await takeMic(); } catch (err) { throw micError(err); }
+    if (keep && state.mode === 'conversation') micAsk = Promise.resolve(st);
+    else st.getTracks().forEach((t) => t.stop());
   }
 
   /**
@@ -1085,7 +1126,7 @@ export function createVoice(hooks) {
           if (!d.open) { document.body.append(d); d.showModal(); }
         }
       };
-      go.addEventListener('click', () => { unlockAudio(); if (phase === 'ask' || phase === 'failed') run(); });
+      go.addEventListener('click', () => { wake(); if (mode === 'conversation') askMicNow(); if (phase === 'ask' || phase === 'failed') run(); });
       no.addEventListener('click', () => {
         if (phase === 'getting') { close(); return; }               // it goes on; the screen and the chip show it
         close(); settle(false);
