@@ -202,6 +202,10 @@ export function createVoice(hooks) {
     })().finally(() => { asrLoading = null; });
     return asrLoading;
   }
+  async function disposeSpeech() {
+    const s = speech; speech = null; speechLangs = new Set();
+    await Promise.resolve(s?.dispose?.()).catch(() => {});
+  }
   async function disposeModels() {
     const a = asr, s = speech, v = vad;
     asr = null; speech = null; speechLangs = new Set(); vad = null; vadLoading = null; debug.vad = 'off';
@@ -564,6 +568,7 @@ export function createVoice(hooks) {
     tts.playing = null;
     try { player.pause(); player.removeAttribute('src'); player.load(); } catch { /* — */ }
     caption = ''; render();
+    silent();
   }
   /** A sentence to read. In the phone's turns, only kept until the answer is over and the chat model has gone. */
   function ttsFeed(text, lang) {
@@ -618,8 +623,12 @@ export function createVoice(hooks) {
     idleCheck();
   }
   function idleCheck() {
-    if (!tts.playing && !tts.items.length) { log('audio-idle'); dispatch({ type: 'AUDIO_IDLE' }); }
+    if (!tts.playing && !tts.items.length) { log('audio-idle'); dispatch({ type: 'AUDIO_IDLE' }); silent(); }
   }
+  // Who waits for the reading to be over (the phone's turns: the voice goes before the ears come back).
+  const silenceWaiters = new Set();
+  function silent() { for (const r of silenceWaiters) r(); silenceWaiters.clear(); }
+  const whenSilent = () => (!tts.playing && !tts.items.length ? Promise.resolve() : new Promise((r) => silenceWaiters.add(r)));
   player.addEventListener('ended', () => { if (tts.playing) endOfSentence(tts.playing); });
   player.addEventListener('error', () => { if (tts.playing) endOfSentence(tts.playing); });
 
@@ -691,6 +700,11 @@ export function createVoice(hooks) {
       if (!speakingModes()) return;
       if (tts.items.length) await hooks.unloadLlm().catch(() => {});
       if (state.mode === 'conversation') {
+        // One model at a time on a phone: the tab is killed past 2 GB (measured on an iPhone, 9-nov, with Whisper,
+        // the VAD and the voice loading together). The answer is read with the voice alone; then the voice goes and
+        // the ears come back.
+        if (tts.items.length || tts.playing) { pump(); await whenSilent(); await disposeSpeech(); }
+        if (state.mode !== 'conversation') return;
         try { await Promise.all([loadAsr(), loadVad()]); if (!['paused', 'error', 'off'].includes(state.phase)) await openMic(); } catch (err) { console.warn('[voice] after the turn', err); noteError(err); dispatch({ type: 'FAILED', error: err?.code || 'failed' }); }
       }
       pump();
@@ -723,8 +737,12 @@ export function createVoice(hooks) {
         while (policy === 'turns' && hooks.turnRunning()) { await new Promise((r) => setTimeout(r, 200)); if (state.mode !== mode) { if (mode === 'conversation') dropMic(); return; } }
         if (mode === 'conversation') {
           await openMic();                        // the permission question first: it is the one the user must answer
-          if (policy === 'turns') await hooks.unloadLlm().catch(() => {});
-          await Promise.all([loadAsr(), loadVad(), loadSpeech(hooks.lang()).then(() => makeFiller(hooks.lang())).catch((e) => console.warn('[voice] voice', e))]);
+          if (policy === 'turns') {
+            // A phone starts by listening only: the voice loads when there is an answer to read, on its own (all three
+            // at once went past the tab's 2 GB on an iPhone). No «Un momento…» there: it needs the voice loaded.
+            await hooks.unloadLlm().catch(() => {});
+            await Promise.all([loadAsr(), loadVad()]);
+          } else await Promise.all([loadAsr(), loadVad(), loadSpeech(hooks.lang()).then(() => makeFiller(hooks.lang())).catch((e) => console.warn('[voice] voice', e))]);
         } else {
           await loadSpeech(hooks.lang()).then(() => makeFiller(hooks.lang())).catch((e) => console.warn('[voice] voice', e));
         }
