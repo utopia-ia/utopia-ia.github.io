@@ -792,3 +792,9 @@ button.mem-link { border: 0; background: none; font: inherit; font-size: var(--e
 
 /* What the model is thinking about, on the folded line while it thinks: one line, cut with an ellipsis. */
 .think-now { display: inline-block; max-width: min(60ch, 70vw); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; vertical-align: bottom; opacity: .7; font-style: italic; }
+
+/* elffuss.improve (improve.js): the request, «¿Programas?» with two chips, then where it went. */
+.card-improve .improve-pide { color: var(--ef-graphite); font-size: var(--ef-text-sm); overflow-wrap: anywhere; }
+.card-improve .improve-chip { min-width: 64px; min-height: 36px; font-size: var(--ef-text-sm); }
+.card-improve .improve-open { display: inline-flex; align-items: center; text-decoration: none; }
+@media (pointer: coarse) { .card-improve .improve-chip, .card-improve .improve-other { min-height: 44px; } }

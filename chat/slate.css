@@ -70,3 +70,70 @@
 .send:disabled { opacity: 0.6; }
 .dock { padding-bottom: max(var(--ef-s5), env(safe-area-inset-bottom)); }
 @media (max-width: 600px) { .composer { padding: 8px; } .composer textarea { font-size: 1rem; line-height: 24px; min-height: 44px; padding: 10px 0; } .send { width: 44px; height: 44px; } .composer .att-btn, .composer .mic-btn { width: 40px; height: 44px; } }
+
+/* «Tu versión» (theme.js): a theme sets only the tokens of tokens.css it lists, inline on <html>. The slate colours
+   above that are not tokens follow it here, keyed on attributes the chat's code chooses (never the theme's values):
+   data-ef-yours names what the theme changes, data-ef-scheme says whether its wall is light or dark, and
+   data-ef-on-accent which text reads on its accent. Every text pair used below is one theme.js measures. */
+html[data-ef-yours~="palette"] {
+  --fg: var(--ef-ink);
+  --bg: var(--ef-wall);
+  --ef-tape-soft: color-mix(in srgb, var(--ef-tape) 22%, var(--ef-wall));
+  --ef-board-hole: color-mix(in srgb, var(--ef-board), var(--ef-ink) 15%);
+  --ef-steel-strong: color-mix(in srgb, var(--ef-steel), var(--ef-ink) 40%);
+}
+html[data-ef-yours~="palette"] .composer { background: var(--ef-board); border-color: var(--ef-steel-strong); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ef-steel) 45%, transparent), var(--ef-shadow-2); }
+html[data-ef-yours~="palette"] .composer:focus-within { border-color: var(--ef-ink); box-shadow: 0 0 0 5px color-mix(in srgb, var(--ef-ink) 18%, transparent), var(--ef-shadow-2); }
+html[data-ef-yours~="palette"] .composer textarea::placeholder { color: var(--ef-graphite); }
+/* A light wall: the light values of tokens.css for what is not themed (states, the apps' enamels, shadows). */
+html[data-ef-scheme="light"] {
+  color-scheme: light;
+  --ef-ok: #1a6b3d; --ef-ok-soft: #e4f1e8; --ef-warn: #7f4c00; --ef-warn-soft: #fff1c2; --ef-err: #b01f42; --ef-err-soft: #fbe8ec;
+  --ef-claw: #1e6b52; --ef-translator: #0f6e8c; --ef-copiloto: #8a5a00; --ef-code: #2b4acb; --ef-braid: #6b3fa0;
+  --ef-shadow-1: 0 1px 0 rgba(25, 27, 30, 0.06); --ef-shadow-2: 0 14px 28px -20px rgba(25, 27, 30, 0.45);
+  --ef-shadow-lift: 0 26px 36px -16px rgba(25, 27, 30, 0.5), 0 2px 0 rgba(25, 27, 30, 0.04);
+}
+/* An accent: the primary buttons and the box's edge take it, with black or white text, whichever reads better (one of
+   the two always reaches 4.5:1). */
+html[data-ef-yours~="accent"] :is(.send, .btn, .tc-open) { background: var(--ef-accent); border-color: transparent; }
+html[data-ef-yours~="accent"] :is(.send, .btn, .tc-open):hover { background: color-mix(in srgb, var(--ef-accent) 86%, var(--ef-ink)); }
+html[data-ef-on-accent="light"] :is(.send, .btn, .tc-open) { color: #ffffff; }
+html[data-ef-on-accent="dark"] :is(.send, .btn, .tc-open) { color: #000000; }
+html[data-ef-yours~="accent"] .composer { border-color: var(--ef-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ef-accent) 18%, transparent), var(--ef-shadow-2); }
+html[data-ef-yours~="accent"] .composer:focus-within { border-color: var(--ef-accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--ef-accent) 32%, transparent), var(--ef-shadow-2); }
+html[data-ef-yours] .stop { background: var(--ef-ink); color: var(--ef-on-ink); }
+
+/* The slim note «Estás en tu versión · Volver a la oficial», under the top bar. Its words are theme.js's own. */
+.yours-note {
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px var(--ef-s3);
+  margin: 0; padding: 4px var(--ef-s4); min-height: 36px;
+  background: var(--ef-surface); color: var(--ef-graphite); border-block: 1px solid var(--ef-steel);
+  font-size: var(--ef-text-xs); line-height: 1.4; text-align: center;
+}
+.yours-text { display: inline-flex; align-items: center; gap: var(--ef-s2); }
+.yours-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--ef-accent); }
+.yours-note[data-state="done"] .yours-text, .yours-note[data-state="refused"] .yours-text { color: var(--ef-ink); }
+.yours-back {
+  min-height: 28px; padding: 2px var(--ef-s2); border: 0; border-radius: var(--ef-r1); background: none;
+  color: var(--ef-ink); font: inherit; font-weight: var(--ef-weight-strong); cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--ef-steel-strong); text-underline-offset: 3px; text-decoration-thickness: 1.5px;
+}
+.yours-back:hover { text-decoration-color: currentColor; }
+.yours-x { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--ef-r1); background: none; color: var(--ef-graphite); cursor: pointer; }
+.yours-x:hover { color: var(--ef-ink); background: var(--ef-board); }
+.yours-x .ic { width: 16px; height: 16px; }
+@media (pointer: coarse) { .yours-back { min-height: 40px; } .yours-x { width: 40px; height: 40px; } }
+
+/* The look a link brings (#theme=), shown before anything is kept. */
+.yours-preview {
+  /* Beside the page it previews, not over it: top right on a computer, at the foot on a phone. */
+  position: fixed; z-index: 60; right: var(--ef-s5); top: calc(env(safe-area-inset-top, 0px) + 68px);
+  width: min(24rem, calc(100% - 32px)); padding: var(--ef-s4) var(--ef-s5);
+  background: var(--ef-surface); color: var(--ef-ink); border: 1px solid var(--ef-steel); border-radius: var(--ef-r4);
+  box-shadow: var(--ef-shadow-lift);
+}
+.yours-preview h2 { margin: 0 0 var(--ef-s1); font-size: var(--ef-text-md); font-weight: var(--ef-weight-heading); }
+.yours-preview p { margin: 0 0 var(--ef-s2); color: var(--ef-graphite); font-size: var(--ef-text-sm); line-height: 1.45; }
+.yours-preview .yours-pv-note { font-size: var(--ef-text-xs); }
+.yours-pv-acts { display: flex; justify-content: flex-end; gap: var(--ef-s2); margin-top: var(--ef-s3); }
+@media (max-width: 600px) { .yours-preview { right: 16px; left: 16px; top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); width: auto; } }

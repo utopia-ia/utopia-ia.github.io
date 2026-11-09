@@ -33,6 +33,10 @@ import { needsAppTools, wrapsOnlyMedia } from './app-intent.js';
 import { attachFile, docContext, mediaContext, kindOf, DOC_ACCEPT, canRecord, recorderPanel, peaksCanvas, startRecording, toMono16k, keepVoiceNote } from './attach.js';
 import { createVoice } from './voice.js';
 import { inputHistory } from './input-history.js';
+import { startTheme, themeText } from './theme.js';
+import { needsImprove } from './improve-intent.js';
+import { replyLang } from './reply-lang.js';
+import * as improve from './improve.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -424,7 +428,9 @@ const T = {
 };
 // The public copy (mirror.js) keeps memory and apps in this browser and has no web search: its own words.
 if (mirror) for (const l of ['en', 'es']) Object.assign(T[l], MIRROR_WORDS[l]);
-const t = (k, ...a) => { const v = T[lang][k] ?? T.en[k]; return typeof v === 'function' ? v(...a) : v; };
+// «Tu versión» (theme.js) may relabel a few of these words: only the keys of theme.js THEMEABLE, plain text, and every
+// one of them ends in textContent or an attribute (never in innerHTML, a message or the model's prompt).
+const t = (k, ...a) => { const own = themeText(lang, k); if (own !== undefined) return own; const v = T[lang][k] ?? T.en[k]; return typeof v === 'function' ? v(...a) : v; };
 
 const gb = (n) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(n / 1e9) + ' GB';
 const mb = (n) => (n >= 1e9 ? gb(n) : new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(n / 1e6) + ' MB');
@@ -982,6 +988,12 @@ function paintCard(li, m) {
       return;
     }
     card.classList.add('is-engine');
+    // A save the user did not ask for and that was not kept: nothing to show (runTool), not even an empty step.
+    if (r.quiet) {
+      card.remove();
+      if (!li.querySelector('.answer')?.textContent.trim() && !li.querySelector('.err')) li.hidden = true;
+      return;
+    }
     const slot = el('div', 'mem-slot');
     if (c.tool === 'memory.list') {
       card.insertAdjacentHTML('afterbegin', svg('i-note', 'ic tc-ic'));
@@ -1082,6 +1094,15 @@ function paintCard(li, m) {
     return;
   }
   if (isMediaTool(c.tool)) { paintMediaCard(li, card, body, m, r, c); return; }
+  if (c.tool === 'elffuss.improve' && !r.error) {
+    card.insertAdjacentHTML('afterbegin', svg('i-window', 'ic tc-ic'));
+    if (r.pending) { body.append(el('span', 'tc-kicker', t('usingTool'))); card.append(body); return; }
+    improve.paint(card, body, m, {
+      open: openImprove,
+      onChoose: (target, codes) => { m.result = { ...m.result, target, codes }; if (chat && chat.messages.includes(m)) save(); paintCard(li, m); },
+    });
+    return;
+  }
   // Any other tool name: the model asked for something this chat does not have.
   card.classList.add('is-error');
   body.append(el('span', 'tc-kicker', t('toolFailed')), el('span', 'tc-line', r.error || c.tool || ''));
@@ -1320,14 +1341,20 @@ async function runTool(call, ctx) {
       const goOn = es ? ' Sigue respondiendo al usuario sin guardarlo y no vuelvas a intentarlo.' : ' Go on answering the user without saving it, and do not try again.';
       const andGoOn = (x) => String(x).replace(/[\s.]*$/, '.') + goOn;
       const mt = ctx.memory;
+      // A save the user did not ask for («recuerda que…» is not in their words) that is not kept: the model still
+      // reads why (so it does not try again), the visitor reads nothing. Kiko: «ha salido lo de memoria, que sobra».
+      // Only a save the user asked for says that it failed.
+      const quiet = call.tool === 'memory.save' && !memory.asksToRemember(ctx.userText, lang);
       if (!mt) {
         const off = es ? 'La memoria no está disponible ahora.' : 'Memory is not available right now.';
+        if (quiet) return { text: andGoOn(off), say: '', result: { card: null, quiet: true } };
         return { text: call.tool === 'memory.save' ? andGoOn(off) : off, say: off, result: { card: { type: 'unavailable' } } };
       }
       const r = await mt.run(call.tool, a, { ask: ctx.askMemory });
       if (call.tool === 'memory.forget') forgetTurnCtx();
       if (call.tool === 'memory.list') return { text: r.text, result: { list: true } };
       const notSaved = call.tool === 'memory.save' && (!r.card || r.card.type === 'unavailable');
+      if (notSaved && quiet) return { text: andGoOn(r.text), say: '', result: { card: null, quiet: true } };
       return { text: notSaved ? andGoOn(r.text) : r.text, ...(notSaved ? { say: r.text } : {}), result: { card: r.card || { type: 'note', text: r.text } } };
     }
     // The two tools that leave the device: the search words go to DuckDuckGo, or the address to its site, through
@@ -1370,10 +1397,21 @@ async function runTool(call, ctx) {
         return { text: 'ERROR: ' + (e?.message || e), result: { site, query, error: String(e?.message || e) } };
       }
     }
+    // «Cámbiate», «ponte en verde»: handed to Claw or Code (improve.js), only on a turn whose words asked for it, run by
+    // the chat itself before any model step: never from what a model wrote, a web page or any other tool result.
+    case 'elffuss.improve':
+      return improve.run({ allowed: !mirror && !!ctx.improve, userText: ctx.userText });
     default:
       if (isMediaTool(call.tool) && !mirror) return runMedia(call, ctx);
       return fail(es ? `Herramienta desconocida: ${call.tool}` : `Unknown tool: ${call.tool}`);
   }
+}
+
+// Claw's #/mejora, in the apps panel beside the chat.
+function openImprove(url) {
+  closeSide();
+  if (ui.sheet?.open) ui.sheet.close();
+  if (!appview.open(url)) window.open(url, '_blank', 'noopener');
 }
 
 // ---------- Media tools ----------
@@ -2401,6 +2439,10 @@ async function runTurn(li, mine, ctl, reason) {
   // The app tools likewise (app-intent.js): asked for an app, an app open in the panel and a change or fix for it, or
   // a saved app named. Decided on the first step, when the list of saved apps is at hand.
   let appTurn = onlyAttach ? false : null;
+  // «Cámbiate», «ponte en verde», «quiero un color más claro» (improve-intent.js, from the user's own words of this turn
+  // only): handed to Claw or Code at once, with no model and no memory on this turn. Kiko, on elffuss.com: «quiero que
+  // tenas un color mas claro» went to the model, which tried memory.save and answered «Noted».
+  const improveTurn = !onlyAttach && !mirror && !editImage && needsImprove(userText, { open: panel.openName() });
   let attachNudged = false;
   let mt = null;                    // this turn's memory (memory-wire.js beginTurn), or null without memory
   let failed = false;
@@ -2411,6 +2453,21 @@ async function runTurn(li, mine, ctl, reason) {
     // The voice mode: on a phone its models leave the tab's memory to the chat model first (voice.js).
     if (voice) { await voice.beforeTurn(); voice.turnStarted(); }
     await checked;
+    if (improveTurn) {
+      const call = { tool: 'elffuss.improve', args: {}, forced: true };
+      msg.content = '```tool\n' + JSON.stringify({ tool: call.tool, args: {} }) + '\n```';
+      msg.call = callSummary(call);
+      msg.result = null;
+      paintBot(li, msg);
+      const res = await runTool(call, { userText, summary: msg.call, signal: ctl.signal, li, improve: true });
+      msg.result = res.result;
+      paintBot(li, msg);
+      mine.messages.push(msg, { role: 'user', content: `[result ${call.tool}]\n${res.text}`, meta: 'result' });
+      mine.updated = Date.now();
+      await store.put(mine);
+      msg = null;
+      return;
+    }
     // The pictures of the message are looked at before the model answers (once: the words are kept with them), so the
     // model reads what they show instead of «you cannot see it».
     await lookAtAttachments(li, mine, lastUser, ctl.signal);
@@ -2469,7 +2526,7 @@ async function runTurn(li, mine, ctl, reason) {
         if (appTurn === null || !anchor || !turnCtx.has(anchor)) {
           const now = await untilStopped(liveContext(), ctl.signal);
           if (appTurn === null) appTurn = needsAppTools(userText, { open: now.open, names: (now.apps || []).map((a) => a.name) }).apps;
-          const text = `${CONTEXT_LABEL[lang]}\n${contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang), voice: !!voiceTurn })}`;
+          const text = `${CONTEXT_LABEL[lang]}\n${contextBlock(lang, { ...now, memory: mt?.block.text || '', today: memory.today(lang), voice: !!voiceTurn, reply: replyLang(userText, lang) })}`;
           if (anchor && !turnCtx.has(anchor)) turnCtx.set(anchor, text);
           if (!anchor) looseCtx = text;
         }
@@ -2680,6 +2737,7 @@ async function runTurn(li, mine, ctl, reason) {
       const stepMsg = msg, stepLi = li;
       const ctx = {
         userText, summary: msg.call, memory: mt, signal: ctl.signal, li,
+        improve: false,                  // a model never runs elffuss.improve: only an improve turn does, above
         progress: (p) => { stepMsg.live = p; paintMediaProgress(stepLi, p); },
         webProgress: (p) => { if (stepMsg.result) return; stepMsg.webLive = p; if (stepLi.isConnected) paintCard(stepLi, stepMsg); },
         ask: (scope, detail) => untilStopped(requirePerm(scope, detail, li, ctl.signal), ctl.signal),
@@ -3216,6 +3274,9 @@ async function boot() {
   } });
   applyLang(lang);
   mountNote($('main'));
+  // «Tu versión»: the user's theme from Claw (through the bridge, with a time limit) or one accepted from a link;
+  // none, the official look. Its words repaint like a language change.
+  startTheme({ bridge, onTexts: () => { applyLang(lang); paintList(); } }).catch((e) => console.warn('[chat] theme', e));
   wire();
   // The app open inside the page is marked in the sidebar, like the open chat.
   appview.start({ onChange: (key) => {

@@ -1,8 +1,8 @@
 {
   "schema": "elffuss-home/live@1",
-  "source": "ab6fb1657c959f45bf029bdb7428828cbef7ace7",
-  "engine": "2cf52a0a177bec075f46dde1180f5f9662a9b66c",
-  "claw": "e8ac76cef7cfccdbf5fad6805f118e1c636fd605",
+  "source": "2bdaee4d7a80e93ab581d2a7bd066d9ff2c1d942",
+  "engine": "66a122208dcfa0757c9e7a7a06a3c2b8d3181a7c",
+  "claw": "07acdf992d744d571cf607f6c7eebdb374ef8ac7",
   "served": [
     "index.html",
     "chat/",

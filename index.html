@@ -8,15 +8,15 @@
 <link rel="alternate" hreflang="en" href="https://elffuss.com/">
 <link rel="alternate" hreflang="es" href="https://elffuss.com/?lang=es">
 <link rel="alternate" hreflang="x-default" href="https://elffuss.com/">
-<script src="/chat/lang-boot.js"></script>
+<script src="chat/lang-boot.js"></script>
 <meta name="description" content="A chat answered by an AI model that runs inside your browser tab through WebGPU, on your own device: no account, no API key, and your messages stay on your device unless you ask it to search the web. Plus the Elffuss apps: Claw, Code, Translator, Copilot, the tools and Braid.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#303752">
-<link rel="manifest" href="/chat/manifest.json">
+<link rel="manifest" href="chat/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Elffuss">
-<link rel="apple-touch-icon" href="/chat/img/icon-192.png">
+<link rel="apple-touch-icon" href="chat/img/icon-192.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Elffuss">
 <meta property="og:locale" content="en_US">
@@ -36,14 +36,17 @@
 <meta name="twitter:image:alt" content="The Elffuss mark and the line: AI that runs in your browser, on your own GPU.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z' fill='%23c8a06a'/%3E%3Ccircle cx='20.5' cy='13.2' r='2.1' fill='%23191b1e'/%3E%3C/svg%3E">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"Elffuss","url":"https://elffuss.com/","inLanguage":["en","es"],"description":"A chat answered by an AI model that runs inside your browser tab through WebGPU, plus the Elffuss apps."}</script>
-<link rel="preload" href="/chat/ds/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/chat/ds/fonts/fonts.css">
-<link rel="stylesheet" href="/chat/ds/tokens.css">
-<link rel="stylesheet" href="/chat/ds/base.css">
-<link rel="stylesheet" href="/chat/ds/elffuss-mark.css">
-<link rel="stylesheet" href="/chat/chat.css">
-<link rel="stylesheet" href="/chat/slate.css">
-<link rel="stylesheet" href="/chat/voice.css">
+<link rel="preload" href="chat/ds/fonts/archivo-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="chat/ds/fonts/fonts.css">
+<link rel="stylesheet" href="chat/ds/tokens.css">
+<link rel="stylesheet" href="chat/ds/base.css">
+<link rel="stylesheet" href="chat/ds/elffuss-mark.css">
+<link rel="stylesheet" href="chat/chat.css">
+<link rel="stylesheet" href="chat/slate.css">
+<link rel="stylesheet" href="chat/voice.css">
+<!-- Every address of the chat's own files is relative, so the same page works at a sub-path too: a public copy at
+     https://<user>.github.io/elffuss-chat/ (mirror.js). The docroot's other pages (/how-it-works/, /blog/) stay
+     absolute: on a copy, mirror.js sends them to elffuss.com. -->
 <!-- No modulepreload of chat.js: Safari served a preloaded copy from its memory cache without asking the server, and a
      two-day-old chat.js ran under a new page. The publish adds ?v=<commit> to the script below (ops/stamp-entry.py). -->
 </head>
@@ -86,7 +89,7 @@
 <div class="app" id="app">
   <aside class="side" id="side" aria-label="Chats and apps" data-aria-en="Chats and apps" data-aria-es="Conversaciones y apps">
     <div class="side-head">
-      <a class="elffuss-mark" href="/" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word" translate="no">Elffuss</span></a>
+      <a class="elffuss-mark" href="./" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word" translate="no">Elffuss</span></a>
       <button class="icon-btn only-narrow" type="button" data-close-side aria-label="Close" data-aria-en="Close" data-aria-es="Cerrar"><svg class="ic"><use href="#i-close"/></svg></button>
       <button class="icon-btn only-wide" type="button" data-collapse-side aria-label="Hide the menu" data-aria-en="Hide the menu" data-aria-es="Esconder el menú" title="Hide the menu" data-title-en="Hide the menu" data-title-es="Esconder el menú"><svg class="ic"><use href="#i-sidebar"/></svg></button>
     </div>
@@ -131,7 +134,7 @@
         <li><a class="app-link" style="--c: var(--ef-code)" href="https://code.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Code</span><span class="app-line"><span data-l="en">Edits your project with you</span><span data-l="es" lang="es">Edita tu proyecto contigo</span></span></a></li>
         <li><a class="app-link" style="--c: var(--ef-braid)" href="https://braid.elffuss.com"><svg class="tag" aria-hidden="true"><use href="#i-tag"/></svg><span class="app-name" translate="no">Braid</span><span class="app-line"><span data-l="en">Version control for many agents</span><span data-l="es" lang="es">Control de versiones para muchos agentes</span></span></a></li>
       </ul>
-      <a class="all-apps" href="/apps/"><span data-l="en">All apps</span><span data-l="es" lang="es">Todas las apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      <a class="all-apps" href="apps/"><span data-l="en">All apps</span><span data-l="es" lang="es">Todas las apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
       </details>
       </div>
     </nav>
@@ -152,7 +155,7 @@
   <main class="main is-empty" id="main">
     <header class="topbar">
       <button class="icon-btn only-narrow" type="button" data-open-side aria-label="Chats" data-aria-en="Chats" data-aria-es="Conversaciones" aria-controls="side" aria-expanded="false"><svg class="ic"><use href="#i-chats"/></svg></button>
-      <a class="elffuss-mark only-narrow" href="/" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word" translate="no">Elffuss</span></a>
+      <a class="elffuss-mark only-narrow" href="./" aria-label="Elffuss home" data-aria-en="Elffuss home" data-aria-es="Elffuss, inicio"><svg viewBox="0 0 40 40" aria-hidden="true" focusable="false"><path class="leaf" d="M13.5 35C6.5 31.5 3.5 23 6.8 14.6 10 6.6 18.2 3.4 24.2 6.6c5.2 2.7 5 8.4.8 11.4-3.1 2.2-7 2-9 5-1.9 3-.6 7.6 1 12z"/><circle class="eye" cx="20.5" cy="13.2" r="2.1"/><path class="spark" d="M31 2.5l1.1 2.9 2.9 1.1-2.9 1.1L31 10.5l-1.1-2.9-2.9-1.1 2.9-1.1z"/></svg><span class="word" translate="no">Elffuss</span></a>
       <p class="model needs-js" id="model" hidden><span class="model-name" id="model-name" translate="no"></span><span class="model-state" id="model-state"></span></p>
       <div class="top-actions">
         <button class="voice-btn needs-js" id="voice-btn" type="button" hidden><svg class="ic" aria-hidden="true"><use href="#i-v-talk"/></svg><span class="voice-label" aria-hidden="true"><span data-l="en">Voice</span><span data-l="es" lang="es">Voz</span></span></button>
@@ -171,7 +174,7 @@
             <p data-l="es" lang="es">Responde un modelo que corre en este navegador, en tu propio dispositivo. Lo que escribes no sale de él, salvo las búsquedas web que le pidas.</p>
             <p class="welcome-can" data-l="en">Ask it for a small app and it builds it here, ready to use. Ask it to remember something and Claw remembers it too. Ask it to search the web and it answers with the links.</p>
             <p class="welcome-can" data-l="es" lang="es">Pídele una app pequeña y la construye aquí, lista para usar. Pídele que recuerde algo y Claw también lo recordará. Pídele que busque en la web y te contesta con los enlaces.</p>
-            <a class="all-apps welcome-more" href="/apps/"><span data-l="en">Meet Elffuss and all its apps</span><span data-l="es" lang="es">Conoce Elffuss y todas sus apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+            <a class="all-apps welcome-more" href="apps/"><span data-l="en">Meet Elffuss and all its apps</span><span data-l="es" lang="es">Conoce Elffuss y todas sus apps</span><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></a>
           </div>
           <ol class="thread" id="thread" aria-label="Conversation" data-aria-en="Conversation" data-aria-es="Conversación"></ol>
         </div>
@@ -212,7 +215,7 @@
         <div class="nogpu-apps" id="nogpu-apps"></div>
       </section>
 
-      <noscript><p class="noscript">The chat needs JavaScript. <a href="/apps/">See all the Elffuss apps</a>.</p></noscript>
+      <noscript><p class="noscript">The chat needs JavaScript. <a href="apps/">See all the Elffuss apps</a>.</p></noscript>
     </div>
   </main>
 
@@ -249,6 +252,6 @@
   <div id="mem-sheet-body"></div>
 </dialog>
 
-<script type="module" src="/chat/chat.js?v=ab6fb1657c95"></script>
+<script type="module" src="chat/chat.js?v=2bdaee4d7a80"></script>
 </body>
 </html>

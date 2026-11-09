@@ -61,6 +61,13 @@ export function load() {
 }
 export const loaded = () => M;
 
+// Did the user ask to remember something in these words («recuerda que…», «apunta…», "remember that…")? The engine's
+// own trigger (memory-core.js hasTrigger), the one its write gate uses; before the modules load, a plain fallback.
+export function asksToRemember(text, l = lang) {
+  if (M?.core?.hasTrigger) return M.core.hasTrigger(String(text || ''), l === 'es' ? 'es' : 'en', M.cfg?.strings);
+  return /\b(?:recuerda|acu[eé]rdate|apunta|memoriza|no olvides|remember|don't forget|note that)\b/i.test(String(text || ''));
+}
+
 // Today's local date for the live state of every turn, in the engine's words (memory-text.js `todayLine`): «Hoy es
 // 2026-11-04, miércoles.» / "Today is 2026-11-04, Wednesday.", the form the memory block uses for events, so «¿qué
 // tengo mañana?» can be answered. Without the engine loaded, the same sentence made here.

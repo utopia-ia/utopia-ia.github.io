@@ -319,6 +319,61 @@ async function cargaPrefijo(fichas) {
   }
 }
 
+// ── La conversación, aparcada mientras el modelo está descargado ────────────
+// El chat descarga el modelo cuando necesita la memoria para otra cosa (la voz en un teléfono) y lo vuelve a cargar
+// al rato. Sin esto, la vuelta releía la conversación entera (miles de fichas en un móvil). Al descargar se exporta
+// la foto del ÚLTIMO TURNO (estado recurrente + filas KV, como la del sistema) con sus fichas exactas y se deja en el
+// mismo almacén; la primera vuelta tras recargar la importa si esas fichas son prefijo exacto del prompt nuevo, y la
+// reutilización de siempre sigue desde ahí. Una sola foto (la última), de un solo uso, con la misma huella estricta
+// que el prefijo del sistema. Solo con __ELFFUSS_PREFIJO_DISCO, como él.
+const APARCADO = 'turno-aparcado';
+const APARCADO_MAX = 192 * 1024 * 1024;    // más que esto no se aparca: en un teléfono pesaría más que reprocesar
+const APARCADO_LECTURA_MS = 4000;          // la descarga no espera más que esto a leer la foto de la tarjeta
+
+async function aparcaTurno() {
+  if (!prefijoDiscoActivo() || !sesion || !consumidos || !sesion.state.tieneInstantanea('turno')) return null;
+  const fichas = consumidos.slice();
+  const salida = sesion.state.exportaInstantanea('turno');
+  if (!salida) return null;
+  let tope;
+  const datos = await Promise.race([salida, new Promise((ok) => { tope = setTimeout(() => ok(null), APARCADO_LECTURA_MS); })])
+    .catch(() => null).finally(() => clearTimeout(tope));
+  if (!datos) return null;
+  const bytes = datos.partes.reduce((n, p) => n + p.data.byteLength, 0);
+  if (bytes > APARCADO_MAX) return null;
+  const huella = await huellaPrefijo(fichas);
+  // La escritura va después: los datos ya están en la memoria del programa y la tarjeta se puede soltar.
+  return async () => {
+    try {
+      const db = await abrePrefijos();
+      try { await pideIdb(db.transaction('fotos', 'readwrite').objectStore('fotos').put({ t: Date.now(), huella, fichas, ...datos }, APARCADO)); }
+      finally { db.close(); }
+      console.log(`[engine] conversación aparcada en disco al descargar · ${fichas.length} fichas · ${(bytes / 1048576).toFixed(0)} MiB`);
+    } catch (e) { console.warn('[engine] no se pudo aparcar la conversación:', e?.message || e); }
+  };
+}
+
+async function recuperaTurno(cabeza) {
+  if (!prefijoDiscoActivo() || !sesion) return null;
+  try {
+    const db = await abrePrefijos();
+    let d;
+    try {
+      const st = db.transaction('fotos', 'readwrite').objectStore('fotos');
+      d = await pideIdb(st.get(APARCADO));
+      if (d) st.delete(APARCADO);          // de un solo uso, sirva o no
+    } finally { db.close(); }
+    if (!d || !Array.isArray(d.fichas) || d.fichas.length >= cabeza.length || d.fichas.some((t, k) => t !== cabeza[k])) return null;
+    if (d.huella !== await huellaPrefijo(d.fichas)) return null;
+    if (!sesion.state.importaInstantanea('turno', d)) return null;
+    console.log(`[engine] conversación recuperada del disco tras recargar · ${d.fichas.length} fichas sin procesar`);
+    return d.fichas;
+  } catch (e) {
+    console.warn('[engine] no se pudo recuperar la conversación aparcada:', e?.message || e);
+    return null;
+  }
+}
+
 export function configure(key) {
   if (key && MODELS[key] && key !== clave) {
     clave = key;
@@ -911,6 +966,9 @@ async function descargar() {
   // Con su propio motivo: el turno parado así no lo pidió quien lo lanzó, y
   // el error tiene que decirlo (ver «POR QUÉ se paró»).
   try { await pararTodos('descarga'); } catch { /* parar nunca impide descargar */ }
+  // La conversación, a disco antes de soltar la tarjeta (ver aparcaTurno): la lectura necesita el dispositivo vivo.
+  let escribeAparcado = null;
+  try { escribeAparcado = await aparcaTurno(); } catch { /* solo una caché */ }
   pensante = false;
   formato = formatoDePlantilla('', null);
   try { sesion?.destroy?.(); } catch { /* mejor esfuerzo */ }
@@ -938,6 +996,8 @@ async function descargar() {
   // él tenga cargado un LFM3 (ver `aplicaRapido`). Lo que se cargue después a
   // mano en la misma página (una prueba, otro motor) no los hereda.
   aplicaRapido(null);
+  // El disco, ya sin la tarjeta: no retrasa la memoria que la descarga tenía que liberar.
+  if (escribeAparcado) await escribeAparcado();
 }
 
 // {temperature, seed, p, k, maxTokens} o null para volver a voraz. Lo usa el
@@ -1520,6 +1580,11 @@ async function turno(history, system, onToken, { senal, onPrefill, tLlamada, res
   // versión no lo decía y el diagnóstico costó decodificar tokens a mano.
   //
   // La comparación es contra la CABEZA, que es lo que la instantánea describe.
+  // Tras recargar el modelo, la conversación aparcada al descargarlo (ver aparcaTurno).
+  if (!consumidos && quiereReuso && sesion.state.nPast === 0) {
+    const recuperadas = await recuperaTurno(cabeza);
+    if (recuperadas) consumidos = recuperadas;
+  }
   let motivo = 'primer turno';
   if (consumidos) {
     if (cabeza.length <= consumidos.length) motivo = `el prompt no crece (${cabeza.length} <= ${consumidos.length})`;

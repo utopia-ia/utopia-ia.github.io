@@ -74,8 +74,10 @@ export async function requestDevice(opts = {}) {
   });
   if (!adapter) throw new Error('no hay adaptador WebGPU');
 
-  const wantF16 = adapter.features.has('shader-f16') && opts.f16 !== false;
-  const wantSG = adapter.features.has('subgroups') && opts.subgroups !== false;
+  // `__ELFFUSS_F16 = false` / `__ELFFUSS_SUBGROUPS = false`: pedir el dispositivo SIN esa capacidad, para medir si una
+  // tarjeta concreta la tiene pero lenta (diagnóstico remoto en el laboratorio, sin tocar la llamada).
+  const wantF16 = adapter.features.has('shader-f16') && opts.f16 !== false && globalThis.__ELFFUSS_F16 !== false;
+  const wantSG = adapter.features.has('subgroups') && opts.subgroups !== false && globalThis.__ELFFUSS_SUBGROUPS !== false;
   // timestamp-query solo se pide si el llamador lo quiere (perfilado); no lo usa
   // producción, así que por defecto no se activa.
   const wantTS = adapter.features.has('timestamp-query') && opts.timestamp === true;

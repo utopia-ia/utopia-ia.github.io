@@ -14,6 +14,11 @@
 //   · web search has no proxy here (it lives at elffuss.com/proxy), so the web tools are off;
 //   · links to the Elffuss apps open in a new tab and say they are on elffuss.com.
 //
+// A user's fork of the public copy (https://<user>.github.io/elffuss-chat/, the code «tu versión» of a programmer) is
+// this same mirror mode, and only that: no state between the two, by design (the security review of 8-nov dropped
+// shared memory, the model store and our services for forks). «Tu versión» as a theme lives on elffuss.com
+// (theme.js) and is off here.
+//
 // localhost and 127.0.0.1 count as the official site, as they always did for development.
 // No imports: the apps page loads this file without the engine.
 

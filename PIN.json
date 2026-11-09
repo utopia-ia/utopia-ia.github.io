@@ -4,8 +4,8 @@
   "engine": {
     "repo": "elffuss-engine",
     "branch": "public-clean",
-    "commit": "2cf52a0a177bec075f46dde1180f5f9662a9b66c",
-    "engineCommit": "dedfcf10fa4798f008d12cdbe6d8869e1d8b972a",
+    "commit": "66a122208dcfa0757c9e7a7a06a3c2b8d3181a7c",
+    "engineCommit": "26f1dbd1d529af4e483dc6459ccaee024a3651d0",
     "dir": "js",
     "files": [
       {
@@ -41,7 +41,7 @@
       {
         "from": "js/device.js",
         "to": "engine/device.js",
-        "sha256": "c2aad5e92fda27b0bcf9673fe2e47fe2b9a407afdc4c5632c2486b151eef279b"
+        "sha256": "d77613b8dc39b8cc4d374fa0a73a8cd7ca7872e00a47fdfe92c8a07e88a26155"
       },
       {
         "from": "js/gguf.js",
@@ -226,7 +226,7 @@
       {
         "from": "js/provider.js",
         "to": "engine/provider.js",
-        "sha256": "df19e80723da38b984b71173053bc81eb5e903077a89d45e97bc0c78c363341e"
+        "sha256": "49e461e4869d2585926ec1f3141a8f20e1f479bd6dd11e5ecd2b869715f5d818"
       },
       {
         "from": "js/quant-tables.js",
@@ -251,7 +251,7 @@
       {
         "from": "js/state.js",
         "to": "engine/state.js",
-        "sha256": "e12539231fd06d49c39a341acebc4ed8b206e5bc9b8544ac5a7801ca667e47c7"
+        "sha256": "daaf31b5758e5241c61393a500971b8ec4b3824dd4b618b61c672da2f46a6950"
       },
       {
         "from": "js/tokenizer.js",
@@ -272,7 +272,7 @@
   },
   "claw": {
     "repo": "elffuss-claw",
-    "commit": "e8ac76cef7cfccdbf5fad6805f118e1c636fd605",
+    "commit": "07acdf992d744d571cf607f6c7eebdb374ef8ac7",
     "files": [
       {
         "from": "web/js/runtime/model-store.js",
@@ -303,6 +303,11 @@
         "from": "web/memory/memory.config.js",
         "to": "../memory/memory.config.js",
         "sha256": "ff78c8f05ecf4e34c3e4fc51860dd28307c3f912a7cfec32aa908ed88d5189b4"
+      },
+      {
+        "from": "web/js/elffuss-theme.js",
+        "to": "elffuss-theme.js",
+        "sha256": "38f34672b6647d42388cf815edbaa63e1937fdf6661f7629c37af97364a496e6"
       }
     ]
   }

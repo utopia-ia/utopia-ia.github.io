@@ -192,12 +192,19 @@ export function open(href) {
   if (!embeddable(url)) return false;
   const key = APPS[url.host].key;
   const entry = loaded.get(key);
-  // A link to another page of an app already open: that page, in the same frame.
-  if (entry?.frame && url.href !== entry.url && url.pathname + url.search !== '/') { entry.frame.src = url.href; entry.url = url.href; }
+  // A page of the app, not its start: another path, a query, or a route in the hash (Claw's #/apps/<name>, #/mejora?…).
+  const deep = url.pathname + url.search + url.hash !== '/';
+  // A link to another page of an app already open: that page, in the same frame. With location.replace, not a new
+  // src: a frame's own navigation is an entry in the page's history, and «back» would step the frame back instead of
+  // returning to the chat.
+  if (entry?.frame && url.href !== entry.url && deep) {
+    try { entry.frame.contentWindow.location.replace(url.href); } catch { entry.frame.src = url.href; }
+    entry.url = url.href;
+  }
   // One entry in the history over the chat, whichever apps were opened from there: «back» is always the chat.
   if (/^#app=/.test(location.hash)) { if (location.hash !== '#app=' + key) history.replaceState({ app: key }, '', '#app=' + key); }
   else history.pushState({ app: key }, '', '#app=' + key);
-  show(key, entry?.url || (url.pathname === '/' && !url.search ? home(BY_KEY[key]) : url.href));
+  show(key, entry?.url || (deep ? url.href : home(BY_KEY[key])));
   return true;
 }
 

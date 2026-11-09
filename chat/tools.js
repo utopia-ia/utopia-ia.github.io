@@ -159,6 +159,7 @@ const ALIASES = {
   web_fetch: 'web.fetch', fetch: 'web.fetch', fetch_url: 'web.fetch', open_url: 'web.fetch', browse: 'web.fetch',
   web_site: 'web.site', site_search: 'web.site', search_site: 'web.site', 'web.site_search': 'web.site', 'web.search_site': 'web.site',
   'web.crawl': 'web.site', crawl: 'web.site', buscar_en_web: 'web.site',
+  improve: 'elffuss.improve', elffuss_improve: 'elffuss.improve', improve_elffuss: 'elffuss.improve', 'elffuss.theme': 'elffuss.improve', customize: 'elffuss.improve',
   ...MEDIA_ALIASES,
 };
 const canonical = (call) => (call && Object.hasOwn(ALIASES, call.tool) ? { ...call, tool: ALIASES[call.tool] } : call);
@@ -213,7 +214,7 @@ export function writingTool(text) {
 
 // ---------- The prompt ----------
 
-export const TOOL_NAMES = ['app.create', 'app.open', 'app.list', 'memory.save', 'memory.list', 'memory.forget', 'web.search', 'web.fetch', 'web.site', ...MEDIA_TOOL_NAMES];
+export const TOOL_NAMES = ['app.create', 'app.open', 'app.list', 'memory.save', 'memory.list', 'memory.forget', 'web.search', 'web.fetch', 'web.site', 'elffuss.improve', ...MEDIA_TOOL_NAMES];
 
 const CATALOG = {
   en: [
@@ -241,6 +242,8 @@ const CATALOG = {
 // media ids are for instead of «you cannot make images». The public copy has no model store, so no media tools.
 // `apps: false` leaves the app tools and the rules for building an app out of the prompt (app-intent.js decides, per
 // turn): measured on elffuss.com, with them always there the small model built apps nobody asked for.
+// elffuss.improve is never offered here: a turn whose words ask to change Elffuss runs it at once, without the model
+// (improve-intent.js, chat.js), and any other turn refuses it. Only its name and spellings are known (TOOL_NAMES).
 export function systemPrompt(lang, mem = null, { web = true, media = false, apps = true } = {}) {
   const full = fullPrompt(lang, mem, media, apps);
   return web ? full : copyPrompt(full, lang);
@@ -334,13 +337,17 @@ export const CONTEXT_LABEL = { en: 'CONTEXT NOW (the real state, use it when you
 // what is relevant to this turn, within a budget set by the model's context), or '' when there is none. `today` is the
 // user's local date with its weekday (memory-wire.js `today`); it changes once a day, so it lives here and never in
 // the system prompt.
-export function contextBlock(lang, { apps, open, memory = '', today = '', voice = false }) {
+// `reply`: the language of the user's message (reply-lang.js), said in that language, so a page in English with a
+// message in Spanish gets its answer in Spanish.
+const REPLY = { es: 'El usuario escribe en español: responde en español.', en: 'The user writes in English: answer in English.' };
+export function contextBlock(lang, { apps, open, memory = '', today = '', voice = false, reply = null }) {
   const es = lang === 'es';
   const none = es ? 'ninguna' : 'none';
   const list = apps === null ? (es ? 'no disponible ahora' : 'not available now')
     : apps.length ? apps.slice(0, 20).map((a) => a.name).join(', ') : none;
   return [
     ...(today ? [today] : []),
+    ...(reply && Object.hasOwn(REPLY, reply) ? [REPLY[reply]] : []),
     (es ? 'Apps del usuario: ' : 'The user\'s apps: ') + list,
     (es ? 'App abierta en el panel: ' : 'App open in the panel: ') + (open || none),
     ...(memory ? [memory] : []),

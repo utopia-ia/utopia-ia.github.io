@@ -44,8 +44,10 @@ export function createState(device, hp, opts = {}) {
   // Se decide AQUÍ y se expone en el estado, para que el shader que escribe la
   // caché y los que la leen no puedan discrepar. Si uno escribiera f16 y otro
   // leyera f32, no habría error: habría basura.
+  // Sin `shader-f16` en el dispositivo, f32: la fusión qkv escribe la caché con código f16, que ese dispositivo no
+  // compila (antes el motor no arrancaba en tarjetas sin f16).
   const kvF16 = opts.kvF16 !== undefined ? !!opts.kvF16
-    : globalThis.__ELFFUSS_KV_F16 !== false;
+    : globalThis.__ELFFUSS_KV_F16 !== false && device.features?.has?.('shader-f16') !== false;
   const bytesKv = kvF16 ? 2 : 4;
 
   const kv = new Map();      // índice de capa → {k, v}
