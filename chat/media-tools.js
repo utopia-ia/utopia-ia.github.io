@@ -641,7 +641,22 @@ export function createMediaTools(hooks) {
 
   // What the voice mode (voice.js) needs to keep its own speech models loaded across a conversation: the SDK modules,
   // the model store and the runtimes, and Whisper. It never takes `busy`: its models stay while the mode is on.
-  const voiceKit = { env, module, asr: () => (hooks.loadAsr || ((u) => import(u)))(new URL('../elffuss-asr/index.js', base).href) };
+  const voiceKit = {
+    env, module, asr: () => (hooks.loadAsr || ((u) => import(u)))(new URL('../elffuss-asr/index.js', base).href),
+    // The SDK core's registry and device choice: which files a model needs here, for one download of everything.
+    core: async () => {
+      const [registry, device] = await Promise.all([import(new URL('sdk/core/registry.js', base).href), import(new URL('sdk/core/device.js', base).href)]);
+      return { ...registry, ...device };
+    },
+  };
+  // How much looking at a picture would download here (0 once it is stored): for one question with the chat model.
+  async function describeNeed() {
+    try {
+      const mod = await module('image-to-text'); const e = await env();
+      const est = await mod.ImageToText.estimate({ store: e.store });
+      return { bytes: est?.fits === false ? 0 : (est?.missingBytes ?? est?.downloadBytes ?? 0) };
+    } catch { return { bytes: 0 }; }
+  }
 
-  return { run, transcribe, describe, base, isMediaTool, lines: mediaToolLines, rule: mediaRule, voiceKit };
+  return { run, transcribe, describe, describeNeed, base, isMediaTool, lines: mediaToolLines, rule: mediaRule, voiceKit };
 }

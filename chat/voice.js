@@ -37,7 +37,8 @@ const FALLBACK_VOICES = [
 const WORDS = {
   es: {
     chip: 'Voz', modeTitle: 'Modo de voz',
-    modes: { text: ['Texto', 'Escribes y lees, como siempre'], speaker: ['Altavoz', 'Lee en voz alta cada respuesta'], conversation: ['Conversación', 'Hablas y te contesta, sin manos'] },
+    modes: { text: ['Texto', 'Sin voz, como siempre'], speaker: ['Altavoz', 'Lee en voz alta cada respuesta'], conversation: ['Conversación', 'Hablas y te contesta, sin manos'] },
+    more: 'Más opciones',
     settings: 'Ajustes', voiceEs: 'Voz en español', voiceEn: 'Voz en inglés', speed: 'Velocidad', pause: 'Pausa para terminar',
     pauseHint: 'Silencio que hace falta para dar por acabada tu frase', autoSend: 'Enviar al terminar de hablar', think: 'Pensar antes de responder', thinkHint: 'Más lento: en un móvil, muchos segundos antes de la primera palabra', filler: 'Un momento…',
     onDevice: 'Todo ocurre en este dispositivo: ni tu voz ni el texto salen del navegador.',
@@ -62,6 +63,10 @@ const WORDS = {
     consentSize: (s) => `La primera vez se descargan los modelos de voz (${s}). Después quedan guardados en este navegador.`,
     consentChat: (s) => `También el modelo del chat, que aún no está: ${s}.`,
     consentGo: (s) => (s ? `Descargar ${s} y empezar` : 'Empezar'), consentNo: 'Ahora no',
+    what: (s) => `Lo que se descarga · ${s}`, stored: 'ya está aquí',
+    items: { chat: 'El modelo del chat', asr: 'Whisper, que escribe lo que dices', vad: 'El detector de voz (Silero)', es: 'La voz en español', en: 'La voz en inglés' },
+    getting: (a, b, p) => `Descargando ${a} de ${b} · ${p} %`, gotAll: 'Todo descargado. Preparando…', later: 'Seguir en segundo plano',
+    failedGet: (a, b) => `Se ha cortado con ${a} de ${b} bajados. Lo bajado se guarda: al reintentar sigue desde ahí.`, retry: 'Reintentar', cancel: 'Ahora no',
     progress: (p) => `Preparando la voz… ${p}%`,
     errors: {
       'mic-denied': 'Sin permiso para el micrófono. Dale permiso en el candado de la barra de direcciones y toca el círculo.',
@@ -73,7 +78,8 @@ const WORDS = {
   },
   en: {
     chip: 'Voice', modeTitle: 'Voice mode',
-    modes: { text: ['Text', 'You type and read, as usual'], speaker: ['Speaker', 'Reads every answer aloud'], conversation: ['Conversation', 'You talk, it answers, hands free'] },
+    modes: { text: ['Text', 'No voice, as usual'], speaker: ['Speaker', 'Reads every answer aloud'], conversation: ['Conversation', 'You talk, it answers, hands free'] },
+    more: 'More options',
     settings: 'Settings', voiceEs: 'Spanish voice', voiceEn: 'English voice', speed: 'Speed', pause: 'Pause to finish',
     pauseHint: 'How much silence ends what you are saying', autoSend: 'Send when you stop talking', think: 'Think before answering', thinkHint: 'Slower: on a phone, many seconds before the first word', filler: 'One moment…',
     onDevice: 'Everything happens on this device: neither your voice nor the text leaves the browser.',
@@ -98,6 +104,10 @@ const WORDS = {
     consentSize: (s) => `The first time, the voice models are downloaded (${s}). After that they stay in this browser.`,
     consentChat: (s) => `And the chat model, which is not here yet: ${s}.`,
     consentGo: (s) => (s ? `Download ${s} and start` : 'Start'), consentNo: 'Not now',
+    what: (s) => `What is downloaded · ${s}`, stored: 'already here',
+    items: { chat: 'The chat model', asr: 'Whisper, which writes down what you say', vad: 'The voice detector (Silero)', es: 'The Spanish voice', en: 'The English voice' },
+    getting: (a, b, p) => `Downloading ${a} of ${b} · ${p}%`, gotAll: 'All downloaded. Getting ready…', later: 'Continue in the background',
+    failedGet: (a, b) => `It was cut with ${a} of ${b} downloaded. What arrived is kept: trying again goes on from there.`, retry: 'Try again', cancel: 'Not now',
     progress: (p) => `Getting the voice ready… ${p}%`,
     errors: {
       'mic-denied': 'No permission for the microphone. Allow it from the padlock in the address bar and tap the circle.',
@@ -122,7 +132,7 @@ function loadSettings() {
  * @param {{ kit: { env: () => Promise<{store, runtime}>, module: (m: string) => Promise<any>, asr: () => Promise<any> },
  *   lang: () => 'es'|'en', live?: (fn: () => void) => void,
  *   send: (text: string) => void, stopTurn: () => Promise<void>, turnRunning: () => boolean,
- *   unloadLlm: () => Promise<void>, chatModel: () => ({ missing: boolean, bytes: number }), approveChatModel: () => void,
+ *   unloadLlm: () => Promise<void>, chatModel: () => ({ missing: boolean, bytes: number, fetch?: (onProgress) => Promise<void> }),
  *   beforeDownload?: () => Promise<boolean>,
  *   chip: HTMLElement, stage: HTMLElement, input?: HTMLElement }} hooks
  */
@@ -222,29 +232,85 @@ export function createVoice(hooks) {
     return vadLoading;
   }
 
-  /** What the mode would download here: { voice, chat } bytes still missing. */
-  async function missing(mode) {
+  // ---------- One download for everything a mode needs ----------
+  // Kiko: «tiene que bajar todos los modelos que necesite del tirón, no ir uno a uno». Choosing a mode works out every
+  // file it will use here (the chat model if missing, Whisper, the voice detector, the voice of the page's language
+  // and of the other one when the browser speaks it too), asks once with the total, downloads them together (three
+  // at a time, through the model store, which keeps what arrived: a retry goes on from there), and only then loads
+  // the models and listens. A phone downloads everything too, and still loads in turns (the tab's memory).
+  const speakLangs = () => {
+    const ui = hooks.lang() === 'es' ? 'es' : 'en', other = ui === 'es' ? 'en' : 'es';
+    const known = (navigator.languages || [navigator.language || '']).some((l) => String(l).toLowerCase().startsWith(other));
+    return known ? [ui, other] : [ui];
+  };
+  async function plan(mode) {
     const e = await hooks.kit.env();
-    let bytes = 0;
+    const has = async (f) => { try { return await e.store.has(f.url, f.size); } catch { return false; } };
+    const item = async (key, files) => {
+      const list = await Promise.all(files.map(async (f) => ({ ...f, has: await has(f) })));
+      return { key, files: list, bytes: list.reduce((n, f) => n + f.size, 0), missing: list.reduce((n, f) => n + (f.has ? 0 : f.size), 0) };
+    };
+    const items = [];
+    const c = hooks.chatModel?.() || { missing: false };
+    if (c.missing && c.fetch) items.push({ key: 'chat', bytes: c.bytes, missing: c.bytes, fetch: c.fetch, files: [] });
+    if (mode === 'conversation') {
+      const am = await hooks.kit.asr();
+      const model = am.pickModel ? await am.pickModel() : undefined;
+      if (am.filesFor) items.push(await item('asr', await am.filesFor({ model })));
+      if (am.VoiceActivity?.files) items.push(await item('vad', am.VoiceActivity.files({ registry: await am.registry() })));
+    }
     try {
-      const mod = await audio();
-      const langs = [...new Set([hooks.lang(), hooks.lang() === 'es' ? 'en' : 'es'])];
-      for (const l of langs) {
-        const est = await mod.Speech.estimate({ store: e.store, lang: l, voice: voiceFor(l) }).catch(() => null);
-        if (est?.fits === false && l === hooks.lang()) return { error: est.reason || 'device-unsupported' };
-        if (est) bytes += est.missingBytes ?? est.downloadBytes ?? 0;
+      const core = await hooks.kit.core();
+      const reg = await core.loadRegistry();
+      const probe = await core.probeWebGPU();
+      for (const l of speakLangs()) {
+        const v = voices.find((x) => x.id === voiceFor(l));
+        const id = v?.model === 'kokoro' || (!v && l === 'en') ? 'text-to-speech/kokoro-82m' : 'text-to-speech/moss-tts-nano';
+        let files;
+        try { files = core.eagerFiles(core.getModel(reg, id), core.chooseVariant(core.getModel(reg, id), 'auto', probe).variant); }
+        catch { if (l === hooks.lang()) return { error: 'device-unsupported' }; continue; }
+        items.push(await item(l, files.map((f) => ({ url: f.url, size: f.size }))));
       }
-      if (mode === 'conversation') {
-        const am = await hooks.kit.asr();
-        const model = am.pickModel ? await am.pickModel() : undefined;
-        const est = await am.SpeechToText.estimate({ store: e.store, ...(model ? { model } : {}) }).catch(() => null);
-        if (est?.fits === false) return { error: est.reason || 'device-unsupported' };
-        if (est) bytes += est.missingBytes ?? est.downloadBytes ?? 0;
-        if (am.VoiceActivity) { const v = await am.VoiceActivity.estimate({ store: e.store, registry: await am.registry() }).catch(() => null); if (v) bytes += v.missingBytes ?? 0; }
+    } catch (err) { console.warn('[voice] which voice files', err); }
+    return { items, missing: items.reduce((n, it) => n + it.missing, 0) };
+  }
+  /** Download what `p` lacks, `lanes` at a time; onProgress({ loaded, total, items }). Throws when a file fails. */
+  async function batch(p, onProgress = () => {}, lanes = 3) {
+    const e = await hooks.kit.env();
+    const total = p.missing || 1;
+    const got = new Map();                  // job → bytes so far
+    const jobs = [];
+    for (const it of p.items) {
+      if (it.fetch) jobs.push({ it, size: it.missing, run: (on) => it.fetch(on) });
+      for (const f of it.files) if (!f.has) jobs.push({ it, size: f.size, f, run: (on) => e.store.get(f.url, { bytes: f.size, onProgress: on }) });
+    }
+    const tell = () => {
+      const loaded = [...got.values()].reduce((n, v) => n + v, 0);
+      const items = p.items.map((it) => ({ key: it.key, missing: it.missing, loaded: jobs.filter((j) => j.it === it).reduce((n, j) => n + (got.get(j) || 0), 0) }));
+      onProgress({ loaded: Math.min(loaded, total), total, items });
+    };
+    debug.batch = { files: jobs.length, asked: [] };
+    let next = 0, failed = null;
+    const lane = async () => {
+      while (next < jobs.length && !failed) {
+        const j = jobs[next++];
+        debug.batch.asked.push(j.f?.url || j.it.key);
+        await j.run((x) => {
+          // The store says { loaded, total }; the chat model's loader may say a line with a percentage.
+          const v = typeof x === 'number' ? x * j.size : x && typeof x === 'object' && Number.isFinite(x.loaded) ? x.loaded : typeof x === 'string' && /(\d+(?:[.,]\d+)?)\s*%/.test(x) ? (parseFloat(/(\d+(?:[.,]\d+)?)\s*%/.exec(x)[1].replace(',', '.')) / 100) * j.size : null;
+          if (v != null) { got.set(j, Math.min(j.size, v)); tell(); }
+        });
+        got.set(j, j.size); if (j.f) j.f.has = true; else j.it.missing = 0;
+        tell();
       }
-    } catch (err) { console.warn('[voice] estimate', err); }
-    const c = hooks.chatModel?.() || { missing: false, bytes: 0 };
-    return { voice: bytes, chat: c.missing ? c.bytes : 0 };
+    };
+    tell();
+    // A failure stops the lanes from taking new files; the ones under way finish (what arrived is kept), and only
+    // then the failure is told: a retry then asks for exactly what is missing, never for a file twice at once.
+    const runs = await Promise.allSettled(Array.from({ length: Math.min(lanes, jobs.length) }, () => lane().catch((err) => { failed ||= err; throw err; })));
+    if (failed || runs.some((r) => r.status === 'rejected')) throw failed || runs.find((r) => r.status === 'rejected').reason;
+    for (const it of p.items) if (!it.fetch) it.missing = it.files.reduce((n, f) => n + (f.has ? 0 : f.size), 0);
+    p.missing = p.items.reduce((n, it) => n + it.missing, 0);
   }
 
   // ---------- The microphone ----------
@@ -606,16 +672,18 @@ export function createVoice(hooks) {
     if (preparing) return preparing;
     preparing = (async () => {
       try {
-        const need = await missing(mode);
-        if (need.error) throw Object.assign(new Error(need.error), { code: need.error });
-        if (!settings.seen || need.voice > 0 || (mode === 'conversation' && need.chat > 0)) {
+        const p = await plan(mode);
+        if (p.error) throw Object.assign(new Error(p.error), { code: p.error });
+        debug.plan = p.items.map((it) => ({ key: it.key, bytes: it.bytes, missing: it.missing, files: it.files.length }));
+        if (!settings.seen || p.missing > 0) {
           // Something to download: first the product's own question (on an iPhone tab, install the app first).
-          if ((need.voice > 0 || (mode === 'conversation' && need.chat > 0)) && hooks.beforeDownload && !(await hooks.beforeDownload())) { setMode('text'); return; }
-          const yes = await consent(mode, need);
+          if (p.missing > 0 && hooks.beforeDownload && !(await hooks.beforeDownload())) { setMode('text'); return; }
+          // One question for all of it; then the microphone's own (asked now, so nobody has to come back for it at
+          // the end of a long download); then everything downloads together, and the same window shows how it goes.
+          const yes = await consent(mode, p);
           if (!yes) { setMode('text'); return; }
           settings.seen = true; keep();
-          if (need.chat > 0) hooks.approveChatModel?.();
-        }
+        } else if (mode === 'conversation') await askMic();
         if (state.mode !== mode) return;
         loadPct = null; render();
         if (policy === 'turns' && hooks.turnRunning()) return;     // a phone loads the voice when the answer is over
@@ -750,31 +818,47 @@ export function createVoice(hooks) {
     x.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>';
     x.addEventListener('click', () => closePop());
     head.append(h, x);
+    // The two ways to use the voice, big; «Texto» (the voice off) under them, smaller; the settings folded below
+    // (Kiko: «botones de las opciones más grandes, pon las dos principales y luego más opciones debajo, pero que no
+    // se vea del tirón»). One radio group for the three, arrows move between them.
     const group = document.createElement('div');
     group.className = 'vp-modes'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-labelledby', 'voice-pop-h');
-    for (const m of MODES) {
+    const main = document.createElement('div'); main.className = 'vp-main';
+    const radio = (m, cls, inner) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'vp-mode'; b.dataset.mode = m;
+      b.type = 'button'; b.className = cls; b.dataset.mode = m;
       b.setAttribute('role', 'radio');
       const on = state.mode === m;
       b.setAttribute('aria-checked', String(on));
       b.tabIndex = on ? 0 : -1;
-      b.innerHTML = `<svg class="ic" aria-hidden="true"><use href="#${ICON[m]}"/></svg><span class="vp-name"></span><span class="vp-line"></span><span class="vp-tick" aria-hidden="true"></span>`;
+      b.innerHTML = inner;
       b.querySelector('.vp-name').textContent = W.modes[m][0];
-      b.querySelector('.vp-line').textContent = W.modes[m][1];
+      const line = b.querySelector('.vp-line'); if (line) line.textContent = W.modes[m][1];
       b.addEventListener('click', () => { closePop(false); setMode(m); if (m !== 'conversation') chip.focus({ preventScroll: true }); });
       b.addEventListener('keydown', (e) => {
         const k = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
         if (!k) return;
         e.preventDefault();
-        const all = [...group.querySelectorAll('.vp-mode')];
+        const all = [...group.querySelectorAll('[role="radio"]')];
         all[(all.indexOf(b) + k + all.length) % all.length].focus();
       });
-      group.append(b);
-    }
-    const sets = document.createElement('div');
-    sets.className = 'vp-settings';
-    const sh = document.createElement('h3'); sh.className = 'vp-sub'; sh.textContent = W.settings;
+      return b;
+    };
+    const tick = '<span class="vp-tick" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></span>';
+    main.append(
+      radio('conversation', 'vp-card vp-card-talk', `<span class="vp-art" aria-hidden="true"><span class="vp-orb"></span><svg class="ic" aria-hidden="true"><use href="#${ICON.conversation}"/></svg></span><span class="vp-name"></span><span class="vp-line"></span>${tick}`),
+      radio('speaker', 'vp-card vp-card-speak', `<span class="vp-art" aria-hidden="true"><svg class="ic" aria-hidden="true"><use href="#${ICON.speaker}"/></svg></span><span class="vp-name"></span><span class="vp-line"></span>${tick}`),
+    );
+    const off = radio('text', 'vp-off', `<svg class="ic" aria-hidden="true"><use href="#${ICON.text}"/></svg><span class="vp-name"></span><span class="vp-line"></span>${tick}`);
+    group.append(main, off);
+    // One radio is in the tab order: the checked one.
+    if (![...group.querySelectorAll('[role="radio"]')].some((r) => r.tabIndex === 0)) group.querySelector('[role="radio"]').tabIndex = 0;
+    const sets = document.createElement('details');
+    sets.className = 'vp-more';
+    const sh = document.createElement('summary'); sh.className = 'vp-sub';
+    sh.innerHTML = '<span></span><svg class="vp-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+    sh.firstChild.textContent = W.more;
+    const body = document.createElement('div'); body.className = 'vp-settings';
     const voiceSelect = (lang) => {
       const s = document.createElement('select');
       s.className = 'vp-select';
@@ -809,10 +893,13 @@ export function createVoice(hooks) {
     const thinkLabel = document.createElement('span'); thinkLabel.className = 'vp-label'; thinkLabel.textContent = W.think;
     const thinkHint = document.createElement('span'); thinkHint.id = 'vp-think-hint'; thinkHint.className = 'vp-hint'; thinkHint.textContent = W.thinkHint;
     thinkRow.append(thinkLabel, think, thinkHint);
-    sets.append(sh, field(W.voiceEs, voiceSelect('es')), field(W.voiceEn, voiceSelect('en')),
+    body.append(field(W.voiceEs, voiceSelect('es')), field(W.voiceEn, voiceSelect('en')),
       field(W.speed, speedIn, speedOut), pauseRow, autoRow, thinkRow);
+    sets.append(sh, body);
+    // Opened at the bottom of a short popover, the settings are brought into view.
+    sets.addEventListener('toggle', () => { if (sets.open) requestAnimationFrame(() => body.scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' })); });
     const fine = document.createElement('p'); fine.className = 'vp-fine'; fine.textContent = W.onDevice;
-    pop.append(head, fine, group, sets);
+    pop.append(head, group, fine, sets);
   }
 
   // ---------- The conversation screen ----------
@@ -914,33 +1001,99 @@ export function createVoice(hooks) {
   }
 
   // ---------- First use ----------
-  function consent(mode, need) {
-    return new Promise((resolve) => {
+  /** The microphone's permission, asked now and let go at once (the mode opens it for real when it is ready). */
+  async function askMic() {
+    try { const st = await navigator.mediaDevices.getUserMedia({ audio: true }); st.getTracks().forEach((t) => t.stop()); }
+    catch (err) { const code = err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'mic-denied' : err?.name === 'NotFoundError' ? 'mic-missing' : 'no-audio'; throw Object.assign(new Error(code), { code }); }
+  }
+
+  /**
+   * One question for everything the mode downloads, with the total and, folded, what each part is; after «yes» the
+   * same window shows one progress for all of it (each part's own line folded), can be left to go on in the
+   * background, and offers to try again when the download is cut. Resolves true once all is here, false for «no».
+   */
+  function consent(mode, p) {
+    return new Promise((resolve, reject) => {
       const W = w();
+      const L = hooks.lang();
+      const fmt = (n) => formatBytes(n, L);
       const d = document.createElement('dialog');
       d.className = 'voice-consent';
       d.setAttribute('aria-labelledby', 'vc-h');
-      const total = (need.voice || 0) + (mode === 'conversation' ? need.chat || 0 : 0);
-      const size = total > 0 ? formatBytes(total, hooks.lang()) : '';
-      d.innerHTML = `<div class="vc-orb" aria-hidden="true"></div><h2 id="vc-h"></h2><p class="vc-body"></p><p class="vc-mic"></p><p class="vc-size"></p><div class="vc-actions"><button type="button" class="vs-btn vc-no"></button><button type="button" class="btn vc-go"></button></div>`;
+      const size = p.missing > 0 ? fmt(p.missing) : '';
+      d.innerHTML = `<div class="vc-orb" aria-hidden="true"></div><h2 id="vc-h"></h2><p class="vc-body"></p><p class="vc-mic"></p>
+        <details class="vc-list"><summary></summary><ul></ul></details>
+        <div class="vc-progress" hidden><div class="meter"><i></i></div><p class="vc-state" role="status" aria-live="polite"></p></div>
+        <div class="vc-actions"><button type="button" class="vs-btn vc-no"></button><button type="button" class="btn vc-go"></button></div>`;
       d.querySelector('h2').textContent = W.consentTitle[mode];
       d.querySelector('.vc-body').textContent = W.consentBody[mode];
       const micP = d.querySelector('.vc-mic');
       if (mode === 'conversation') micP.textContent = W.consentMic; else micP.remove();
-      const sz = d.querySelector('.vc-size');
-      const lines = [need.voice > 0 ? W.consentSize(formatBytes(need.voice, hooks.lang())) : '', mode === 'conversation' && need.chat > 0 ? W.consentChat(formatBytes(need.chat, hooks.lang())) : ''].filter(Boolean);
-      if (lines.length) sz.textContent = lines.join(' '); else sz.remove();
-      d.querySelector('.vc-no').textContent = W.consentNo;
-      d.querySelector('.vc-go').textContent = W.consentGo(size);
-      let answered = false;
-      const end = (yes) => { if (answered) return; answered = true; d.close(); d.remove(); resolve(yes); };
-      d.querySelector('.vc-go').addEventListener('click', () => { unlockAudio(); end(true); });
-      d.querySelector('.vc-no').addEventListener('click', () => end(false));
-      d.addEventListener('cancel', (e) => { e.preventDefault(); end(false); });
-      d.addEventListener('click', (e) => { if (e.target === d) end(false); });
+      const list = d.querySelector('.vc-list');
+      const ul = list.querySelector('ul');
+      const rows = new Map();
+      if (p.items.length) {
+        const sum = list.querySelector('summary');
+        sum.innerHTML = '<span></span><svg class="vp-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
+        sum.firstChild.textContent = p.missing > 0 ? W.what(fmt(p.missing)) : W.what(W.stored);
+        for (const it of p.items) {
+          const li = document.createElement('li');
+          li.innerHTML = '<span class="vc-item"></span><span class="vc-amount"></span>';
+          li.firstChild.textContent = W.items[it.key] || it.key;
+          li.lastChild.textContent = it.missing > 0 ? fmt(it.missing) : W.stored;
+          ul.append(li); rows.set(it.key, li);
+        }
+      } else list.remove();
+      const go = d.querySelector('.vc-go'), no = d.querySelector('.vc-no');
+      no.textContent = W.consentNo;
+      go.textContent = W.consentGo(size);
+      const prog = d.querySelector('.vc-progress'), bar = prog.querySelector('.meter i'), said = prog.querySelector('.vc-state');
+      let phase = 'ask', settled = false;
+      const close = () => { try { d.close(); } catch { /* closed */ } d.remove(); };
+      const settle = (v) => { if (settled) return; settled = true; resolve(v); };
+      let last = { loaded: 0, total: p.missing };
+      const show = (x) => {
+        last = x;
+        const pct = Math.floor((100 * x.loaded) / (x.total || 1));
+        bar.style.width = `${pct}%`;
+        prog.querySelector('.meter').setAttribute('aria-valuenow', String(pct));
+        said.textContent = W.getting(fmt(x.loaded), fmt(x.total), pct);
+        for (const r of x.items) { const li = rows.get(r.key); if (li && r.missing > 0) li.lastChild.textContent = `${Math.floor((100 * r.loaded) / r.missing)} %`; }
+        loadPct = pct; render();
+      };
+      const run = async () => {
+        phase = 'getting';
+        prog.hidden = false; go.hidden = true; no.textContent = W.later; no.dataset.role = 'later';
+        prog.querySelector('.meter').setAttribute('role', 'progressbar');
+        prog.querySelector('.meter').setAttribute('aria-valuemin', '0'); prog.querySelector('.meter').setAttribute('aria-valuemax', '100');
+        try {
+          if (mode === 'conversation') await askMic();
+          await batch(p, show);
+          said.textContent = W.gotAll; bar.style.width = '100%';
+          for (const it of p.items) { const li = rows.get(it.key); if (li) li.lastChild.textContent = W.stored; }
+          log('batch-done');
+          setTimeout(close, 400);
+          settle(true);
+        } catch (err) {
+          if (err?.code === 'mic-denied' || err?.code === 'mic-missing' || err?.code === 'no-audio') { close(); if (!settled) { settled = true; reject(err); } return; }
+          console.warn('[voice] the download was cut', err);
+          log('batch-failed');
+          phase = 'failed';
+          said.textContent = W.failedGet(fmt(last.loaded), fmt(last.total));
+          go.hidden = false; go.textContent = W.retry;
+          no.textContent = W.cancel; no.dataset.role = 'cancel';
+          if (!d.open) { document.body.append(d); d.showModal(); }
+        }
+      };
+      go.addEventListener('click', () => { unlockAudio(); if (phase === 'ask' || phase === 'failed') run(); });
+      no.addEventListener('click', () => {
+        if (phase === 'getting') { close(); return; }               // it goes on; the screen and the chip show it
+        close(); settle(false);
+      });
+      d.addEventListener('cancel', (e) => { e.preventDefault(); if (phase === 'getting') close(); else { close(); settle(false); } });
       document.body.append(d);
       d.showModal();
-      d.querySelector('.vc-go').focus();
+      go.focus();
     });
   }
 

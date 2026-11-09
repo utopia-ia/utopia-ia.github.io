@@ -75,6 +75,7 @@ const T = {
     gateTitle: 'Download the model to get an answer',
     gateBody: (label) => `${label} answers on this device. Your browser downloads it once and keeps it for your next visit.`,
     gateBtn: (size) => `Download ${size}`,
+    gateAlso: (size) => `Includes what looks at your photos (${size}): all of it at once.`,
     bytes: (n) => `${n} bytes`,
     starting: 'Starting the graphics card…',
     downloading: (a, b, p) => `Downloading the model · ${a} of ${b} · ${p} %`,
@@ -254,6 +255,7 @@ const T = {
     gateTitle: 'Descarga el modelo para recibir la respuesta',
     gateBody: (label) => `${label} responde en este dispositivo. El navegador lo descarga una vez y lo guarda para la próxima visita.`,
     gateBtn: (size) => `Descargar ${size}`,
+    gateAlso: (size) => `Incluye lo que mira tus fotos (${size}): todo de una vez.`,
     bytes: (n) => `${n} bytes`,
     starting: 'Encendiendo la tarjeta gráfica…',
     downloading: (a, b, p) => `Descargando el modelo · ${a} de ${b} · ${p} %`,
@@ -1817,7 +1819,7 @@ $('mem-btn')?.addEventListener('click', () => {
 repaints.add(paintMemToggle);
 
 // ---------- The model card and the load progress ----------
-function gate(li, signal) {
+function gate(li, signal, { also = 0 } = {}) {
   return new Promise((resolve, reject) => {
     const m = model();
     const box = document.createElement('div');
@@ -1828,13 +1830,15 @@ function gate(li, signal) {
       const h = document.createElement('h2'); h.textContent = t('gateTitle');
       const p = document.createElement('p'); p.textContent = t('gateBody', m.label);
       const size = document.createElement('p'); size.className = 'size';
-      const big = document.createElement('b'); big.textContent = gb(m.bytes);
-      const exact = document.createElement('span'); exact.textContent = t('bytes', num(m.bytes)) + ' · ' + m.label;
+      const big = document.createElement('b'); big.textContent = gb(m.bytes + also);
+      const exact = document.createElement('span'); exact.textContent = t('bytes', num(m.bytes + also)) + ' · ' + m.label;
       size.append(big, exact);
+      const alsoP = also > 0 ? document.createElement('p') : null;
+      if (alsoP) { alsoP.className = 'gate-also'; alsoP.textContent = t('gateAlso', mb(also)); }
       const btn = document.createElement('button');
       btn.type = 'button'; btn.className = 'btn'; btn.dataset.download = '';
       btn.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-down"/></svg>';
-      btn.append(document.createTextNode(t('gateBtn', gb(m.bytes))));
+      btn.append(document.createTextNode(t('gateBtn', gb(m.bytes + also))));
       // On an iPhone or iPad tab the install screen first; «I will install it» leaves the card as it is.
       btn.addEventListener('click', async () => {
         if (btn.disabled) return;
@@ -1844,7 +1848,7 @@ function gate(li, signal) {
         if (!go || !box.isConnected) return;
         repaints.delete(paint); box.remove(); resolve();
       });
-      box.append(h, p, size, btn);
+      box.append(h, p, size, ...(alsoP ? [alsoP] : []), btn);
       box.setAttribute('aria-label', t('gateTitle'));
     };
     live(paint);
@@ -2039,6 +2043,28 @@ function watchHidden() {
   }, device.cpu ? RELEASE_HIDDEN_MS.cpu : RELEASE_HIDDEN_MS.gpu);
 }
 document.addEventListener('visibilitychange', watchHidden);
+
+// The chat model downloaded into this browser's store without loading it (the voice mode's batch, a first message
+// with photos on a phone): the engine's own store (js/runtime/model-store.js, the shared store first), the same file
+// the engine reads later. After it the model counts as here: no download question, and a computer loads it at once.
+let prefetching = null;
+function prefetchChatModel(onProgress = () => {}) {
+  if (modelState !== 'missing') return Promise.resolve();
+  prefetching ||= (async () => {
+    const prov = await import('./js/engine/provider.js');
+    if (prov.prefetch) await prov.prefetch(onProgress);
+    else {
+      const url = modelUrl();
+      if (!url) throw new Error('this model has no single file to download ahead');
+      const { getModelParts } = await import('./js/runtime/model-store.js');
+      if (!(await getModelParts(url, onProgress))) throw new Error('the model could not be stored');
+    }
+    voiceGateOk = true;
+    setModelState('cached');
+    if (!narrow() && !matchMedia('(pointer: coarse)').matches) loadEngine().catch(() => {});
+  })().finally(() => { prefetching = null; });
+  return prefetching;
+}
 
 function loadEngine() {
   if (!loading) {
@@ -2470,13 +2496,29 @@ async function runTurn(li, mine, ctl, reason) {
     }
     // The pictures of the message are looked at before the model answers (once: the words are kept with them), so the
     // model reads what they show instead of «you cannot see it».
+    // First message with photos and no model yet: ONE question for both (the chat model and what looks at photos),
+    // and both download at once (Kiko: «bajar todos los modelos que necesite del tirón»). On a phone they still load
+    // one after the other (the tab's memory): only the download goes together.
+    let gateDone = false;
+    if (modelState === 'missing' && !mirror && (lastUser?.attach || []).some((a) => a.kind === 'image' && !a.seen)) {
+      const vis = await untilStopped(media.describeNeed(), ctl.signal);
+      if (vis.bytes > 0) {
+        stage = 'gate';
+        voice?.attention();
+        await gate(li, ctl.signal, { also: vis.bytes });
+        gateDone = true;
+        preApproved = true;                      // the photo model's own question is already answered
+        if (!narrow() && !matchMedia('(pointer: coarse)').matches) loadEngine().catch(() => {});   // the chat model downloads meanwhile
+        else prefetchChatModel(() => {}).catch(() => {});
+      }
+    }
     await lookAtAttachments(li, mine, lastUser, ctl.signal);
     if (modelState !== 'ready') {
       if (modelState === 'missing') {
         stage = 'gate';
         // Already said yes in the voice mode's first-use question; otherwise the chat shows its own (and the
         // conversation screen steps aside so it can be seen).
-        if (voiceGateOk) voiceGateOk = false;
+        if (voiceGateOk || gateDone) voiceGateOk = false;
         else { voice?.attention(); await gate(li, ctl.signal); }
       }
       if (ctl.signal.aborted) throw Object.assign(new Error('stopped'), { name: 'AbortError' });
@@ -3348,8 +3390,7 @@ function startVoice() {
       kit: media.voiceKit, lang: () => lang, live,
       send: async (text) => { if (turn) await stopTurn(); send(text, { typed: true }); },
       stopTurn, turnRunning: () => !!turn, unloadLlm,
-      chatModel: () => ({ missing: modelState === 'missing', bytes: model()?.bytes || 0 }),
-      approveChatModel: () => { voiceGateOk = true; },
+      chatModel: () => ({ missing: modelState === 'missing', bytes: model()?.bytes || 0, fetch: (on) => prefetchChatModel(on) }),
       beforeDownload: installGate,
       chip: $('voice-btn'), stage: document.querySelector('.stage'), input: ui.input,
     });

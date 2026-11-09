@@ -25,6 +25,12 @@ export class VoiceActivity extends Task {
     }, { device: 'wasm', ...options });
   }
 
+  /** Its files (url, size), for a download of everything at once. */
+  static files({ registry }) {
+    const m = getModel(registry, defaultModelId(registry, 'voice-activity'));
+    return variantFiles(m, m.devices.wasm[0]).map((f) => ({ url: f.url, size: f.size }));
+  }
+
   /** What it would download here (2.2 MB once), nothing downloaded. */
   static async estimate({ store, registry }) {
     const m = getModel(registry, defaultModelId(registry, 'voice-activity'));

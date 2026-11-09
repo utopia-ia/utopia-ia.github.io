@@ -43,6 +43,14 @@ export async function pickModel({ device = preferredDevice() } = {}) {
   return MODELS.base;
 }
 
+/** The files a model needs here (url, size), for a download of everything at once (the voice mode's batch). */
+export async function filesFor({ model, device = preferredDevice() } = {}) {
+  const reg = await registry();
+  const m = getModel(reg, model || defaultModelId(reg, 'speech-to-text'));
+  const choice = chooseVariant(m, device, await probeWebGPU());
+  return variantFiles(m, choice.variant).filter((f) => !f.lazy).map((f) => ({ url: f.url, size: f.size }));
+}
+
 export class SpeechToText extends Task {
   /** @param {import('../elffuss-ai/sdk/core/task.js').TaskOptions & { registry: object }} options */
   constructor(options) {
