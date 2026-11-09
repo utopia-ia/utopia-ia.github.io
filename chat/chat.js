@@ -3383,8 +3383,12 @@ function showBootError(e) {
 
 // The voice mode: its control in the top bar, the reading aloud and the conversation screen (voice.js). What it hears
 // is sent as the user's own words; it reads the answer as the turn writes it.
+// Off on phones and tablets for now (9-nov): on an iPhone the conversation went past the tab's memory and Safari
+// closed it. Voice notes stay. `?voz=movil` turns the voice mode on there, to test it.
+const VOICE_ON_PHONE = /[?&]voz=movil(&|$)/.test(location.search);
+const voiceOffHere = () => !VOICE_ON_PHONE && matchMedia('(pointer: coarse)').matches;
 function startVoice() {
-  if (voice || mirror) return;
+  if (voice || mirror || voiceOffHere()) return;
   try {
     voice = createVoice({
       kit: media.voiceKit, lang: () => lang, live,
